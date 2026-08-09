@@ -22,7 +22,7 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { AiProviderSettings, Markdown, aiProviderSettingsText } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -228,7 +228,8 @@ interface AiPanelProps {
   settings: AiSettings
   /** Preset instruction pushed from the ribbon/start screen; sent immediately when autoRun. When displayText exists the chat bubble shows only it while the full text still goes to the model.
       attachments are local files added in the start-screen input, taking effect with the first message.
-      slideShot attaches a rendering of the current slide so the model sees what it's editing (AI Beautify) */
+      slideShot attaches a rendering of the current slide so the model sees what it's editing (AI Beautify).
+      slideShots attaches clean renderings of every page referenced by a batch of canvas annotations. */
   preset?: {
     text: string
     nonce: number
@@ -236,6 +237,7 @@ interface AiPanelProps {
     displayText?: string
     attachments?: AttachmentMeta[]
     slideShot?: boolean
+    slideShots?: number[]
   } | null
   /** false shows only the collapsed rail; the component stays mounted so panel state survives */
   open?: boolean
@@ -250,6 +252,8 @@ interface AiPanelProps {
   onDeckProgress?: (event: DeckProgressEvent | null) => void
   /** Absolute path of the currently open file (for chat history persistence) */
   currentFilePath?: string | null
+  /** Persist a provider selection made from the panel. */
+  onSettingsChange?: (settings: AiSettings) => void
 }
 
 /** Some locales already end the label with an ellipsis — normalize to exactly one. */
@@ -326,9 +330,11 @@ export function AiPanel({
   onPathChange,
   onDeckProgress,
   currentFilePath,
+  onSettingsChange,
 }: AiPanelProps) {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const [input, setInput] = useState('')
+  const [showProviderSettings, setShowProviderSettings] = useState(false)
   const [busy, setBusy] = useState(false)
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [snapshots, setSnapshots] = useState<DeckSnapshot[]>([])
@@ -435,6 +441,10 @@ export function AiPanel({
   const lastInstructionRef = useRef('')
   /** Paired with lastInstructionRef: keeps the bubble showing only the user's request on retries */
   const lastDisplayTextRef = useRef<string | undefined>(undefined)
+  /** Retain visual context options so retrying an annotated request sends the same slide renders. */
+  const lastRunOptionsRef = useRef<{ slideShot?: boolean; slideShots?: number[] } | undefined>(
+    undefined,
+  )
   /** Mirror of the last turn's (the final reply's turn) tool activity — used when persisting the assistant message,
       avoiding side effects inside the setState updater (StrictMode double-invokes updaters, duplicating history writes) */
   const lastTurnToolsRef = useRef<ToolActivity[]>([])
@@ -1182,22 +1192,24 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.slidesApi
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
-              setChat((prev) => {
-                const next = [...prev]
-                const last = next.at(-1)
-                if (last?.role === 'assistant' && last.error) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
-                }
-                return next
+          // Only Genspark runs require an account check. Custom providers surface
+          // their own endpoint/auth errors instead of prompting for a Genspark login.
+          if (settingsRef.current.provider === 'genspark') {
+            void window.slidesApi
+              .aiGskStatus()
+              .then((status) => {
+                if (status.loggedIn) return
+                setChat((prev) => {
+                  const next = [...prev]
+                  const last = next.at(-1)
+                  if (last?.role === 'assistant' && last.error) {
+                    next[next.length - 1] = { ...last, loginRequired: true }
+                  }
+                  return next
+                })
               })
-            })
-            .catch(() => {})
+              .catch(() => {})
+          }
           void finishHistoryBatch().finally(() => setBusy(false))
         },
       },
@@ -1218,7 +1230,10 @@ export function AiPanel({
       setAttachments(merged)
     }
     if (preset.autoRun)
-      runWith(preset.text, preset.displayText, { slideShot: preset.slideShot ?? false })
+      runWith(preset.text, preset.displayText, {
+        slideShot: preset.slideShot ?? false,
+        slideShots: preset.slideShots,
+      })
     else {
       setInput(preset.text)
       inputRef.current?.focus()
@@ -1292,7 +1307,11 @@ export function AiPanel({
     }
   }
 
-  const runWith = (instruction: string, displayText?: string, opts?: { slideShot?: boolean }) => {
+  const runWith = (
+    instruction: string,
+    displayText?: string,
+    opts?: { slideShot?: boolean; slideShots?: number[] },
+  ) => {
     const loop = loopRef.current
     // runStartingRef: loop.run is called only after attachments are read asynchronously, during which loop.busy is still false,
     // so duplicate triggers must be blocked synchronously (e.g. StrictMode double-running the preset autoRun effect),
@@ -1305,6 +1324,9 @@ export function AiPanel({
     instructionRef.current = instruction
     lastInstructionRef.current = instruction
     lastDisplayTextRef.current = displayText
+    lastRunOptionsRef.current = opts
+      ? { ...opts, slideShots: opts.slideShots ? [...opts.slideShots] : undefined }
+      : undefined
     lastTurnToolsRef.current = []
     runToolsRef.current = []
     stickToBottomRef.current = true
@@ -1322,15 +1344,22 @@ export function AiPanel({
     persistMessage('user', shown, undefined, attachmentsRef.current)
     void collectImageAttachments()
       .then(async (images) => {
-        // AI Beautify sends the current slide's rendering along, so the model sees what it edits;
-        // the note rides on the model instruction only — the chat bubble stays the localized preset text
+        // Visual presets and canvas annotations send clean slide renderings along, so the model
+        // can connect the structural element inventory to what the user actually saw. The note
+        // rides on the model instruction only — the chat bubble stays concise and localized.
         let modelInstruction = instruction
-        if (opts?.slideShot) {
-          const shot = await captureSlideShot(currentRef.current)
+        const requestedPages = new Set(opts?.slideShots ?? [])
+        if (opts?.slideShot) requestedPages.add(currentRef.current)
+        const attachedPages: number[] = []
+        for (const pageIndex of [...requestedPages].sort((a, b) => a - b)) {
+          const shot = await captureSlideShot(pageIndex)
           if (shot) {
             images.push(shot)
-            modelInstruction += `\n\n(Attached image: the current rendering of this slide, slideIndex ${currentRef.current}. Use it to spot visual issues the element inventory can't show.)`
+            attachedPages.push(pageIndex)
           }
+        }
+        if (attachedPages.length > 0) {
+          modelInstruction += `\n\nAttached clean slide renderings, in image order after any user attachments: ${attachedPages.map((pageIndex) => `slideIndex ${pageIndex} (page ${pageIndex + 1})`).join(', ')}. Use them with the annotation coordinates and element inventory to locate each requested change; the screenshots themselves do not contain the annotation markers.`
         }
         // Clear the flag before run: loop.run sets running synchronously, leaving no re-entry window
         runStartingRef.current = false
@@ -1443,7 +1472,8 @@ export function AiPanel({
   // Abort a QC pass still running when the panel unmounts (new file / panel remount by key)
   useEffect(() => () => qcAbortRef.current?.abort(), [])
 
-  const retry = () => runWith(lastInstructionRef.current, lastDisplayTextRef.current)
+  const retry = () =>
+    runWith(lastInstructionRef.current, lastDisplayTextRef.current, lastRunOptionsRef.current)
 
   const newChat = () => {
     dismissClarify()
@@ -1582,6 +1612,14 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setShowProviderSettings(true)}
+            title={aiProviderSettingsText(lang, 'open')}
+            aria-label={aiProviderSettingsText(lang, 'open')}
+          >
+            ⚙
+          </button>
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChat')}>
               <IconNewChat size={15} />
@@ -1594,6 +1632,14 @@ export function AiPanel({
           )}
         </div>
       </div>
+
+      <AiProviderSettings
+        open={showProviderSettings}
+        lang={lang}
+        settings={settings}
+        onSave={onSettingsChange ?? (() => undefined)}
+        onClose={() => setShowProviderSettings(false)}
+      />
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* Past conversation (read-only transcript, not fed to the model), displayed continuously with the current turn */}

@@ -105,7 +105,7 @@ import {
   type AgentImage,
 } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { type WorkbookOperation } from '../domain/workbook-dsl'
+import type { WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
 import {
   applyChartStateEdit,
@@ -928,22 +928,24 @@ export function App(): React.JSX.Element {
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktopApi
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
-              setChat((previous) => {
-                const next = [...previous]
-                const last = next.at(-1)
-                if (last?.role === 'assistant' && last.isError) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
-                }
-                return next
+          // Only Genspark runs require an account check. Custom providers surface
+          // their own endpoint/auth errors instead of prompting for a Genspark login.
+          if (aiSettingsRef.current?.provider === 'genspark') {
+            void window.desktopApi
+              .aiGskStatus()
+              .then((status) => {
+                if (status.loggedIn) return
+                setChat((previous) => {
+                  const next = [...previous]
+                  const last = next.at(-1)
+                  if (last?.role === 'assistant' && last.isError) {
+                    next[next.length - 1] = { ...last, loginRequired: true }
+                  }
+                  return next
+                })
               })
-            })
-            .catch(() => {})
+              .catch(() => {})
+          }
           void autoSaveCompletedAiRun().finally(() => setAiBusy(false))
         },
       },
@@ -955,10 +957,13 @@ export function App(): React.JSX.Element {
     if (!settings) return false
     const config = settings.providers[settings.provider]
     if (!config?.model) return false
-    // Genspark's key never lands in the settings file; the main process injects
-    // it from the gsk login state. When logged out, requests return an error
-    // guiding sign-in — not intercepted here.
-    return settings.provider === 'genspark' || !!config.apiKey
+    // Genspark's key is injected from its login state. A custom endpoint may
+    // intentionally have no key (for example, a local Ollama server).
+    return (
+      settings.provider === 'genspark' ||
+      (settings.provider === 'custom' && !!config.baseUrl) ||
+      !!config.apiKey
+    )
   }
 
   /** Image attachments read as base64 and sent multimodal with this user message
@@ -1084,6 +1089,8 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void window.desktopApi.getAiSettings().then(setAiSettingsState)
   }, [])
+
+  useEffect(() => window.desktopApi.onAiSettingsChanged(setAiSettingsState), [])
 
   useEffect(() => {
     const runtime = createUniver({
@@ -3080,6 +3087,11 @@ export function App(): React.JSX.Element {
         selectionFormat={selectionFormat}
         statusMessage={message}
         aiBusy={aiBusy}
+        aiSettings={aiSettings}
+        onSettingsChange={(next) => {
+          setAiSettingsState(next)
+          void window.desktopApi.setAiSettings(next)
+        }}
         chat={chat}
         historicChat={historicChat}
         attachments={attachments}

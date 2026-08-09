@@ -224,6 +224,7 @@ configurePdfRuntime({
   preloadPath: join(PDF_OUT, 'preload', 'index.js'),
   rendererUrl: process.env.PDF_RENDERER_URL,
   rendererFile: join(PDF_OUT, 'renderer', 'index.html'),
+  includeAiHandlers: false,
 })
 configureMarkdownRuntime({
   preloadPath: join(MARKDOWN_OUT, 'preload', 'index.js'),

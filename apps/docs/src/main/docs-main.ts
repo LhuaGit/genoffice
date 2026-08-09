@@ -10,9 +10,19 @@ import {
 } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
+import {
+  BrowserWindow,
+  Menu,
+  WebContentsView,
+  app,
+  dialog,
+  ipcMain,
+  shell,
+  webContents,
+} from 'electron'
 import {
   appMenuLabels,
+  broadcastRendererEvent,
   contextMenuLabels,
   fetchRemoteImage,
   installContextMenu,
@@ -63,7 +73,7 @@ import type {
   MenuCommand,
   OpenFileResult,
 } from '../shared/ipc'
-import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
+import { AI_SETTINGS_CHANGED_CHANNEL, ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
 import { findDocxPath } from '../shared/open-file'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
 import { isExternallyModified, type DiskFileState } from './external-change'
@@ -2477,8 +2487,6 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
     return settings
   })
 
@@ -2499,6 +2507,7 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
     writeJson(SETTINGS_PATH(), settings)
+    broadcastRendererEvent(webContents.getAllWebContents(), AI_SETTINGS_CHANGED_CHANNEL, settings)
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
@@ -2514,7 +2523,7 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (!config.apiKey && provider !== 'custom')) {
       send({
         requestId,
         type: 'error',
@@ -2620,7 +2629,7 @@ export function registerAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
+    if (!config || (!config.apiKey && provider !== 'custom')) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),

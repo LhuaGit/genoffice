@@ -31,6 +31,8 @@ export type {
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 export type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
+export const AI_SETTINGS_CHANGED_CHANNEL = 'ai:settings-changed'
+
 export interface OpenResult {
   path: string
   slides: RenderSlide[]
@@ -1286,6 +1288,7 @@ export interface SlidesApi {
   onRenamed: (handler: (newPath: string) => void) => () => void
   getAiSettings: () => Promise<AiSettings>
   setAiSettings: (settings: AiSettings) => Promise<void>
+  onAiSettingsChanged: (handler: (settings: AiSettings) => void) => () => void
   aiStream: (request: AiStreamRequest) => Promise<void>
   aiStreamCancel: (requestId: string) => Promise<void>
   /** Genspark account status (gsk login state); with withEmail also fetches the email (needs a network request, slower) */

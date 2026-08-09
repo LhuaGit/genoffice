@@ -668,6 +668,27 @@ describe('streamForProvider: openai-compatible', () => {
     )
   })
 
+  it('omits Authorization when a local custom endpoint has no API key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'custom',
+      { apiKey: '', model: 'local-model', baseUrl: 'http://localhost:11434/v1' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    ).catch(() => {})
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { 'Content-Type': 'application/json' },
+    })
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).not.toHaveProperty(
+      'Authorization',
+    )
+  })
+
   it('rejects the custom provider without a base URL, without ever calling fetch', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

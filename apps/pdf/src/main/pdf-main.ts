@@ -24,6 +24,7 @@ import type {
   SavePdfResult,
 } from '../shared/ipc'
 import { extractPagesBytes, insertPdfBytes, savePdfToPath } from './save-pdf'
+import { registerStandalonePdfAiIpc } from './ai-ipc'
 
 const tDlg = createI18n({
   zh: {
@@ -252,6 +253,8 @@ interface RuntimePaths {
   preloadPath: string
   rendererUrl?: string
   rendererFile?: string
+  /** The unified shell already owns the shared ai:* channels. */
+  includeAiHandlers?: boolean
 }
 
 let runtime: RuntimePaths = { preloadPath: '' }
@@ -531,6 +534,7 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
 }
 
 export function createPdfView(openPath?: string | null): WebContentsView {
+  if (runtime.includeAiHandlers ?? true) registerStandalonePdfAiIpc()
   registerPdfIpc()
   const view = new WebContentsView({
     webPreferences: {
@@ -556,6 +560,7 @@ export function startPdfStandalone(): void {
     rendererFile: join(__dirname, '../renderer/index.html'),
   })
   void app.whenReady().then(() => {
+    registerStandalonePdfAiIpc()
     registerPdfIpc()
     const win = new BrowserWindow({
       width: 1200,

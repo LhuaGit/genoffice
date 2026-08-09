@@ -6764,3 +6764,646 @@ body.vib .slide-list {
   flex: 1;
   min-width: 0;
 }
+/* ── Location-aware AI annotations ─────────────────────────────────────── */
+
+/* Tray is mounted beside .stage-wrap. Keeping the containing block outside
+   .stage-scale prevents the panel itself from growing/shrinking with zoom. */
+.stage-col {
+  position: relative;
+}
+
+.stage-ai-btn.annotation-active {
+  background: #edf6ff;
+  color: #075fb8;
+}
+
+.stage-ai-count {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 1px;
+  padding: 0 4px;
+  place-items: center;
+  border-radius: 999px;
+  background: #0f7fff;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-annotation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ai-annotation-layer.is-active {
+  cursor: crosshair;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.ai-annotation-marquee {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border-style: dashed;
+  border-color: #087af7;
+  background: rgb(15 127 255 / 10%);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 72%) inset,
+    0 2px 8px rgb(15 127 255 / 12%);
+  pointer-events: none;
+}
+
+.ai-annotation-item {
+  pointer-events: none;
+}
+
+.ai-annotation-target {
+  position: absolute;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: rgb(15 127 255 / 72%);
+  background: rgb(15 127 255 / 7%);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 58%) inset;
+  pointer-events: none;
+}
+
+.ai-annotation-target.is-point {
+  background: rgb(15 127 255 / 15%);
+}
+
+.ai-annotation-target.is-selected {
+  border-color: #087af7;
+  background: rgb(15 127 255 / 12%);
+}
+
+.ai-annotation-target.is-pending {
+  border-style: dashed;
+}
+
+.ai-annotation-marker-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.ai-annotation-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  transform: translate(-50%, -50%) scale(var(--ai-annotation-scale, 1));
+  transform-origin: center;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 10%;
+  outline: none;
+  background: #0f7fff;
+  box-shadow:
+    0 3px 10px rgb(8 78 158 / 28%),
+    0 0 0 1px rgb(7 100 203 / 26%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    filter 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ai-annotation-marker:hover,
+.ai-annotation-marker.is-selected {
+  filter: brightness(0.96);
+  box-shadow:
+    0 4px 13px rgb(8 78 158 / 34%),
+    0 0 0 2px rgb(15 127 255 / 28%);
+}
+
+.ai-annotation-marker:focus-visible {
+  box-shadow:
+    0 0 0 3px rgb(255 255 255 / 95%),
+    0 0 0 5px rgb(15 127 255 / 60%);
+}
+
+.ai-annotation-marker.is-pending {
+  background: #fff;
+  color: #0f7fff;
+}
+
+.ai-annotation-editor-anchor {
+  position: absolute;
+  z-index: 3;
+  width: 0;
+  height: 0;
+  pointer-events: auto;
+}
+
+.ai-annotation-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 310px;
+  overflow: hidden;
+  transform: scale(var(--ai-annotation-scale, 1));
+  transform-origin: top left;
+  border: 1px solid #e4e8ed;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow:
+    0 16px 40px rgb(29 42 58 / 16%),
+    0 3px 9px rgb(29 42 58 / 8%);
+  color: #232425;
+  cursor: default;
+}
+
+.ai-annotation-editor-anchor.opens-left .ai-annotation-editor {
+  right: 0;
+  left: auto;
+  transform-origin: top right;
+}
+
+.ai-annotation-editor-anchor.opens-up .ai-annotation-editor {
+  top: auto;
+  bottom: 0;
+  transform-origin: bottom left;
+}
+
+.ai-annotation-editor-anchor.opens-left.opens-up .ai-annotation-editor {
+  transform-origin: bottom right;
+}
+
+.ai-annotation-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 13px 9px;
+}
+
+.ai-annotation-editor-icon,
+.ai-annotation-tray-icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: #edf6ff;
+  color: #0f7fff;
+}
+
+.ai-annotation-editor-head > div,
+.ai-annotation-tray-title > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.ai-annotation-editor-head strong {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+.ai-annotation-editor-head span:not(.ai-annotation-editor-icon) {
+  color: #73777c;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.ai-annotation-editor textarea {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% - 26px);
+  min-height: 82px;
+  margin: 0 13px;
+  resize: vertical;
+  border: 1px solid #dce1e7;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  padding: 9px 10px;
+  color: #232425;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ai-annotation-editor textarea::placeholder {
+  color: #9aa0a6;
+}
+
+.ai-annotation-editor textarea:focus {
+  border-color: #0f7fff;
+  box-shadow: 0 0 0 3px rgb(15 127 255 / 11%);
+}
+
+.ai-annotation-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 13px 12px;
+}
+
+.ai-annotation-editor-actions > div {
+  display: flex;
+  gap: 7px;
+}
+
+.ai-annotation-plain-btn,
+.ai-annotation-primary-btn,
+.ai-annotation-danger-btn,
+.ai-annotation-clear-btn,
+.ai-annotation-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  border-radius: 7px;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.ai-annotation-plain-btn,
+.ai-annotation-clear-btn {
+  border: 1px solid #dfe3e8;
+  background: #fff;
+  color: #4d535a;
+}
+
+.ai-annotation-plain-btn:hover,
+.ai-annotation-clear-btn:hover:not(:disabled) {
+  background: #f5f7f9;
+}
+
+.ai-annotation-primary-btn,
+.ai-annotation-send-btn {
+  border: 1px solid #0f7fff;
+  background: #0f7fff;
+  color: #fff;
+}
+
+.ai-annotation-primary-btn:hover:not(:disabled),
+.ai-annotation-send-btn:hover:not(:disabled) {
+  border-color: #0874e6;
+  background: #0874e6;
+}
+
+.ai-annotation-danger-btn {
+  border: 0;
+  background: transparent;
+  padding-right: 7px;
+  padding-left: 7px;
+  color: #cc3d3d;
+}
+
+.ai-annotation-danger-btn:hover {
+  background: #fff1f1;
+}
+
+.ai-annotation-primary-btn:disabled,
+.ai-annotation-clear-btn:disabled,
+.ai-annotation-send-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.ai-annotation-tray {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  z-index: 35;
+  display: flex;
+  /* Keep the whole AI quick-action bar reachable at common laptop widths. */
+  width: 288px;
+  max-width: calc(100% - 36px);
+  max-height: calc(100% - 24px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e4e8ed;
+  border-radius: 13px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow:
+    0 18px 44px rgb(29 42 58 / 15%),
+    0 2px 8px rgb(29 42 58 / 7%);
+  color: #232425;
+  backdrop-filter: blur(12px);
+}
+
+.ai-annotation-tray.is-collapsed {
+  box-sizing: border-box;
+  width: 218px;
+  height: 32px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgb(29 42 58 / 8%);
+}
+
+.ai-annotation-tray-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #edf0f3;
+  padding: 13px 13px 11px;
+}
+
+.ai-annotation-tray.is-collapsed .ai-annotation-tray-head {
+  height: 100%;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 0;
+  padding: 3px 4px;
+}
+
+.ai-annotation-tray-toggle {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: flex-start;
+  gap: 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-annotation-tray.is-collapsed .ai-annotation-tray-toggle {
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.ai-annotation-tray-toggle:hover {
+  background: #f3f4f6;
+}
+
+.ai-annotation-tray-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.ai-annotation-tray-title strong {
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 18px;
+}
+
+.ai-annotation-tray-title > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #777c82;
+  font-size: 11px;
+  line-height: 15px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ai-annotation-tray-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 999px;
+  background: #edf6ff;
+  color: #075fb8;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-annotation-tray.is-collapsed .ai-annotation-tray-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.ai-annotation-tray.is-collapsed .ai-annotation-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.ai-annotation-icon-btn,
+.ai-annotation-row-delete {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #737980;
+  cursor: pointer;
+}
+
+.ai-annotation-icon-btn:hover,
+.ai-annotation-row-delete:hover {
+  background: #f1f3f5;
+  color: #232425;
+}
+
+.ai-annotation-icon-btn:focus-visible,
+.ai-annotation-tray-toggle:focus-visible,
+.ai-annotation-row-delete:focus-visible,
+.ai-annotation-row-main:focus-visible,
+.ai-annotation-plain-btn:focus-visible,
+.ai-annotation-primary-btn:focus-visible,
+.ai-annotation-danger-btn:focus-visible,
+.ai-annotation-clear-btn:focus-visible,
+.ai-annotation-send-btn:focus-visible {
+  outline: 2px solid rgb(15 127 255 / 65%);
+  outline-offset: 2px;
+}
+
+.ai-annotation-tray-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.ai-annotation-tray-list {
+  min-height: 82px;
+  overflow: auto;
+  padding: 6px;
+}
+
+.ai-annotation-empty {
+  display: flex;
+  min-height: 80px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #989da3;
+  font-size: 12px;
+}
+
+.ai-annotation-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  border-radius: 9px;
+}
+
+.ai-annotation-row:hover {
+  background: #f6f8fa;
+}
+
+.ai-annotation-row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: flex-start;
+  gap: 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  padding: 8px 34px 8px 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-annotation-row-number {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 50% 50% 50% 7px;
+  background: #0f7fff;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-annotation-row-copy,
+.ai-annotation-row-meta {
+  display: flex;
+  min-width: 0;
+}
+
+.ai-annotation-row-copy {
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-annotation-row-meta {
+  align-items: center;
+  gap: 7px;
+  color: #858a90;
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.ai-annotation-row-meta strong {
+  color: #4b5158;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.ai-annotation-row-comment {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #33383d;
+  font-size: 12px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ai-annotation-row-delete {
+  position: absolute;
+  top: 6px;
+  right: 5px;
+  opacity: 0;
+}
+
+.ai-annotation-row:hover .ai-annotation-row-delete,
+.ai-annotation-row-delete:focus-visible {
+  opacity: 1;
+}
+
+.ai-annotation-tray-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  border-top: 1px solid #edf0f3;
+  padding: 10px 12px 12px;
+}
+
+.ai-annotation-clear-btn {
+  flex: 0 0 auto;
+}
+
+.ai-annotation-send-btn {
+  min-width: 0;
+  flex: 1;
+}
+
+@media (max-width: 760px) {
+  .ai-annotation-tray {
+    top: 10px;
+    right: 8px;
+    max-width: calc(100% - 16px);
+    max-height: calc(100% - 16px);
+  }
+}
+
+@media (max-width: 1100px) {
+  .ai-annotation-tray.is-expanded .ai-annotation-tray-head {
+    align-items: center;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .ai-annotation-tray.is-expanded .ai-annotation-tray-toggle {
+    align-items: center;
+  }
+
+  .ai-annotation-tray.is-expanded .ai-annotation-tray-title > span {
+    display: none;
+  }
+}
+
+@media (min-width: 1400px) {
+  .ai-annotation-tray.is-expanded {
+    right: 18px;
+    width: 328px;
+  }
+
+  .ai-annotation-tray.is-collapsed {
+    right: 18px;
+  }
+}

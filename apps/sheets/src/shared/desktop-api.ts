@@ -1945,6 +1945,8 @@ export interface DesktopApi {
   hasQueuedWorkbook(): Promise<boolean>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  /// Shared settings changed in this or another editor view.
+  onAiSettingsChanged(handler: (settings: AiSettings) => void): () => void
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
   /// start a streaming AI call; deltas arrive via onAiStream with the same requestId
   aiStream(request: AiStreamRequest): Promise<void>

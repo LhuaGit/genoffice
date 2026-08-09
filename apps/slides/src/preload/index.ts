@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { ProjectApi } from '@genoffice/project-store'
+import { AI_SETTINGS_CHANGED_CHANNEL } from '../shared/ipc'
 import type {
   AddChartOp,
   AddElementOp,
@@ -265,6 +266,11 @@ const api: SlidesApi = {
   },
   getAiSettings: () => ipcRenderer.invoke('ai:get-settings'),
   setAiSettings: (settings: AiSettings) => ipcRenderer.invoke('ai:set-settings', settings),
+  onAiSettingsChanged: (handler: (settings: AiSettings) => void) => {
+    const listener = (_event: IpcRendererEvent, settings: AiSettings) => handler(settings)
+    ipcRenderer.on(AI_SETTINGS_CHANGED_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(AI_SETTINGS_CHANGED_CHANNEL, listener)
+  },
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),

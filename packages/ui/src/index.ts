@@ -1,4 +1,14 @@
 export { AiComposer } from './AiComposer'
+export {
+  AiProviderSettings,
+  AiProviderSettingsForm,
+  type AiProviderSettingsFormProps,
+  type CustomAiProviderSettings,
+} from './AiProviderSettings'
+export {
+  aiProviderSettingsText,
+  type AiProviderSettingsTextKey,
+} from './ai-provider-settings-strings'
 export { AiTypingIndicator } from './AiTypingIndicator'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown } from './Markdown'

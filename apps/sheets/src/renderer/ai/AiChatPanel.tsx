@@ -1,8 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import type React from 'react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  AiComposer,
+  AiProviderSettings,
+  AiTypingIndicator,
+  aiProviderSettingsText,
+} from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n, type TFunc } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -160,6 +167,8 @@ export function AiChatPanel({
   prompt,
   preview,
   aiBusy,
+  settings,
+  onSettingsChange,
   onPromptChange,
   onSend,
   onStop,
@@ -186,6 +195,8 @@ export function AiChatPanel({
   readonly prompt: string
   readonly preview: ChangePlan | null
   readonly aiBusy: boolean
+  readonly settings: AiSettings | null
+  readonly onSettingsChange: (settings: AiSettings) => void
   readonly onPromptChange: (prompt: string) => void
   /** Send the composer text, or the given instruction when provided (used by the failed-run Retry) */
   readonly onSend: (instruction?: string) => void
@@ -195,11 +206,12 @@ export function AiChatPanel({
   readonly onExpand: () => void
   readonly onCollapse: () => void
 }): React.JSX.Element {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const chatRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const stickToBottomRef = useRef(true)
   const [dragOver, setDragOver] = useState(false)
+  const [showProviderSettings, setShowProviderSettings] = useState(false)
   const asideRef = useRef<HTMLElement | null>(null)
   const [resizing, setResizing] = useState(false)
   /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
@@ -397,6 +409,15 @@ export function AiChatPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            disabled={!settings}
+            onClick={() => setShowProviderSettings(true)}
+            title={aiProviderSettingsText(lang, 'open')}
+            aria-label={aiProviderSettingsText(lang, 'open')}
+          >
+            ⚙
+          </button>
           {(chat.length > 0 || historicChat.length > 0) && (
             <button className="ai-header-btn" onClick={onNewChat} title={t('aiNewChat')}>
               <IconNewChat size={15} />
@@ -407,6 +428,16 @@ export function AiChatPanel({
           </button>
         </div>
       </header>
+
+      {settings && (
+        <AiProviderSettings
+          open={showProviderSettings}
+          lang={lang}
+          settings={settings}
+          onSave={onSettingsChange}
+          onClose={() => setShowProviderSettings(false)}
+        />
+      )}
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
         {/* Past conversation (read-only transcript), shown continuously with the current turn */}

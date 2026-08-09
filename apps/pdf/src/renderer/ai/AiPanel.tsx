@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import {
+  AiComposer,
+  AiProviderSettings,
+  AiTypingIndicator,
+  aiProviderSettingsText,
+} from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -60,6 +65,8 @@ export function AiPanel({
   const stickToBottomRef = useRef(true)
   const [panelWidth, setPanelWidth] = useState(loadPanelWidth)
   const [resizing, setResizing] = useState(false)
+  const [settings, setSettings] = useState<AiSettings | null>(null)
+  const [showProviderSettings, setShowProviderSettings] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
 
   // The .ai-dock wrapper owns the animated width (docs-style 180ms slide);
@@ -69,6 +76,20 @@ export function AiPanel({
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
   }, [panelWidth])
   const settingsRef = useRef<AiSettings | null>(null)
+  useEffect(() => {
+    void window.pdfApi.getAiSettings().then((next) => {
+      settingsRef.current = next
+      setSettings(next)
+    })
+  }, [])
+  useEffect(
+    () =>
+      window.pdfApi.onAiSettingsChanged((next) => {
+        settingsRef.current = next
+        setSettings(next)
+      }),
+    [],
+  )
   const langRef = useRef(lang)
   langRef.current = lang
   const apiRef = useRef(api)
@@ -274,6 +295,15 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            disabled={!settings}
+            onClick={() => setShowProviderSettings(true)}
+            title={aiProviderSettingsText(lang, 'open')}
+            aria-label={aiProviderSettingsText(lang, 'open')}
+          >
+            ⚙
+          </button>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -293,6 +323,20 @@ export function AiPanel({
           </button>
         </div>
       </header>
+
+      {settings && (
+        <AiProviderSettings
+          open={showProviderSettings}
+          lang={lang}
+          settings={settings}
+          onSave={(next) => {
+            settingsRef.current = next
+            setSettings(next)
+            void window.pdfApi.setAiSettings(next)
+          }}
+          onClose={() => setShowProviderSettings(false)}
+        />
+      )}
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
         {chat.length === 0 && (

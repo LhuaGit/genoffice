@@ -110,7 +110,7 @@ import {
   resolvedCommentsPluginKey,
   revisionDisplayState,
 } from './editor/extensions'
-import { type InkAnnotation, type InkTool } from './editor/ink'
+import type { InkAnnotation, InkTool } from './editor/ink'
 import { InkOverlay } from './components/InkOverlay'
 import { collectRevisions, gotoRevision, type TrackChangesStorage } from './editor/revisions'
 import { NavPane } from './components/NavPane'
@@ -601,6 +601,8 @@ export function App() {
     void window.desktop.getRecentFiles().then(setRecent)
     void window.desktop.getAiSettings().then(setSettings)
   }, [])
+
+  useEffect(() => window.desktop.onAiSettingsChanged(setSettings), [])
 
   useEffect(() => {
     localStorage.setItem('aidocs.showAi', showAi ? '1' : '0')
@@ -2679,6 +2681,10 @@ export function App() {
               onExpand={() => setShowAi(true)}
               onCollapse={() => setShowAi(false)}
               filePath={doc?.filePath ?? null}
+              onSettingsChange={(next) => {
+                setSettings(next)
+                void window.desktop.setAiSettings(next)
+              }}
             />
           </div>
         )}

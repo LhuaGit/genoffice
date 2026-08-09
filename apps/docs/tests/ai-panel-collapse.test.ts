@@ -72,6 +72,14 @@ function typeInto(textarea: HTMLTextAreaElement, text: string) {
   })
 }
 
+function typeIntoInput(input: HTMLInputElement, text: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  act(() => {
+    setter.call(input, text)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 beforeAll(() => {
   // jsdom has no scrollTo; the panel auto-scrolls its chat log
   Element.prototype.scrollTo ??= () => {}
@@ -113,6 +121,41 @@ describe('AiPanel collapse', () => {
     expect(rail).not.toBeNull()
     act(() => rail!.click())
     expect(onExpand).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    editor.destroy()
+  })
+
+  it('saves a keyless custom OpenAI-compatible provider', () => {
+    const editor = createEditor()
+    const onSettingsChange = vi.fn()
+    const { container, cleanup } = mount(
+      createElement(AiPanel, panelProps(editor, { onSettingsChange })),
+    )
+
+    const settingsButton = container.querySelector<HTMLButtonElement>(
+      '.ai-panel-header-actions button[aria-label]',
+    )
+    expect(settingsButton).not.toBeNull()
+    act(() => settingsButton!.click())
+
+    const inputs = container.querySelectorAll<HTMLInputElement>('[role="dialog"] input')
+    expect(inputs).toHaveLength(3)
+    typeIntoInput(inputs[0]!, 'http://localhost:11434/v1///')
+    typeIntoInput(inputs[1]!, 'llama3.1')
+    typeIntoInput(inputs[2]!, '')
+    const form = container.querySelector<HTMLFormElement>('[role="dialog"] form')
+    expect(form).not.toBeNull()
+    act(() => form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+
+    expect(onSettingsChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'custom',
+        providers: expect.objectContaining({
+          custom: { apiKey: '', model: 'llama3.1', baseUrl: 'http://localhost:11434/v1' },
+        }),
+      }),
+    )
 
     cleanup()
     editor.destroy()

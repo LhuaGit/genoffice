@@ -16,6 +16,8 @@ export interface PickImageResult {
 
 // ---- AI provider settings/config/streaming: canonical types live in @genoffice/ai-provider ----
 
+export const AI_SETTINGS_CHANGED_CHANNEL = 'ai:settings-changed'
+
 import type {
   AiChatRequest,
   AiChatResponse,
@@ -175,6 +177,8 @@ export interface DesktopApi {
   pickImage(): Promise<PickImageResult | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  /** shared settings changed in this or another editor view */
+  onAiSettingsChanged(handler: (settings: AiSettings) => void): () => void
   /** system print dialog for the current window */
   print(): Promise<void>
   /** render the document to PDF and ask where to save; size in twips.

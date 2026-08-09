@@ -1,10 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
-import type {
-  AiChatResponse,
-  AiSettings,
-  AiStreamChunk,
-  GenSparkAccountStatus,
+import {
+  type AiChatResponse,
+  type AiSettings,
+  type AiStreamChunk,
+  type GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import type {
@@ -250,6 +250,11 @@ const desktopApi: DesktopApi = {
   },
   async setAiSettings(settings) {
     await ipcRenderer.invoke(IPC_CHANNELS.aiSetSettings, settings)
+  },
+  onAiSettingsChanged(callback) {
+    const listener = (_event: unknown, settings: AiSettings): void => callback(settings)
+    ipcRenderer.on(IPC_CHANNELS.aiSettingsChanged, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiSettingsChanged, listener)
   },
   async aiChat(request) {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiChat, request)

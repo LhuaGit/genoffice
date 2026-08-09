@@ -1,3 +1,4 @@
+import type { AiSettings } from '@genoffice/ai-provider'
 import type { UpdateChannel } from './update-api'
 
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
@@ -58,6 +59,12 @@ export interface RecentPage {
 }
 
 export interface HomeApi {
+  /** shared AI provider settings, persisted in userData/ai-settings.json */
+  getAiSettings(): Promise<AiSettings>
+  /** persist the shared AI provider settings used by every editor */
+  setAiSettings(settings: AiSettings): Promise<void>
+  /** shared settings changed in this or another editor view */
+  onAiSettingsChanged(handler: (settings: AiSettings) => void): () => void
   /** unified recents across document types, newest first (paged) */
   recents(query?: RecentQuery): Promise<RecentPage>
   /** starred files (independent of the recent list), newest first (paged) */
@@ -214,6 +221,9 @@ export interface ProjectHomeApi {
 }
 
 export const HOME_CHANNELS = {
+  getAiSettings: 'ai:get-settings',
+  setAiSettings: 'ai:set-settings',
+  aiSettingsChanged: 'ai:settings-changed',
   recents: 'home:recents',
   starred: 'home:starred',
   statPaths: 'home:stat-paths',

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
+import type { AiSettings } from '@genoffice/ai-provider'
 import type {
   AccountLoginEvent,
   AccountStatus,
@@ -53,6 +54,17 @@ function asRecentPage(result: unknown): RecentPage {
 }
 
 const homeApi: HomeApi = {
+  async getAiSettings() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.getAiSettings)) as AiSettings
+  },
+  async setAiSettings(settings) {
+    await ipcRenderer.invoke(HOME_CHANNELS.setAiSettings, settings)
+  },
+  onAiSettingsChanged(handler) {
+    const listener = (_event: IpcRendererEvent, settings: AiSettings): void => handler(settings)
+    ipcRenderer.on(HOME_CHANNELS.aiSettingsChanged, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.aiSettingsChanged, listener)
+  },
   async recents(query) {
     return asRecentPage(await ipcRenderer.invoke(HOME_CHANNELS.recents, query))
   },

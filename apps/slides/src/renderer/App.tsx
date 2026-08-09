@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type React from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { NotePencil } from '@phosphor-icons/react'
 import type {
   GroupRenderNode,
   RenderFill,
@@ -60,6 +62,18 @@ import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
 import { t, useI18n } from './i18n/locale'
 import { AiPanel } from './ai/AiPanel'
+import {
+  buildSlideAnnotationsDisplayText,
+  buildSlideAnnotationsPrompt,
+  referencedAnnotationSlides,
+  type SlideAiAnnotation,
+} from './ai/annotations'
+import {
+  AiAnnotationLayer,
+  AiAnnotationTray,
+  type AiAnnotationLabels,
+  type NewSlideAiAnnotation,
+} from './components/AiAnnotationLayer'
 import { ChartDataDialog } from './components/ChartDataDialog'
 import type { BrushFormat } from './format-brush'
 import { isTextUndoTarget, shouldRouteUndoToDeck } from './undo-routing'
@@ -274,6 +288,8 @@ export function App() {
   const [defaultFont, setDefaultFont] = useState<string | null>(null)
   const [current, setCurrent] = useState(0)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [annotationMode, setAnnotationMode] = useState(false)
+  const [aiAnnotations, setAiAnnotations] = useState<SlideAiAnnotation[]>([])
   /** Group being edited from inside (double-click to enter, click outside/Esc to exit); the selection may contain its children */
   const [enteredGroupId, setEnteredGroupId] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
@@ -354,6 +370,7 @@ export function App() {
     displayText?: string
     attachments?: AttachmentMeta[]
     slideShot?: boolean
+    slideShots?: number[]
   } | null>(null)
   const [_recent, setRecent] = useState<string[]>([])
   const consumePendingRef = useRef<ReturnType<typeof window.slidesApi.consumePendingOpen> | null>(
@@ -560,6 +577,8 @@ export function App() {
       setPath(result.path)
       setCurrent(0)
       setSelectedIds([])
+      setAnnotationMode(false)
+      setAiAnnotations([])
       setEditing(null)
       setDirty(false)
       setInkTool('select')
@@ -881,6 +900,8 @@ export function App() {
     void window.slidesApi.getAiSettings().then(setAiSettings)
   }, [])
 
+  useEffect(() => window.slidesApi.onAiSettingsChanged(setAiSettings), [])
+
   // Recent files for the start screen
   useEffect(() => {
     if (slides.length === 0) void window.slidesApi.getRecentFiles().then(setRecent)
@@ -900,22 +921,83 @@ export function App() {
       displayText?: string,
       attachments?: AttachmentMeta[],
       slideShot?: boolean,
+      slideShots?: number[],
     ) => {
       setShowAi(() => {
         localStorage.setItem('ai-slides-show-ai', '1')
         return true
       })
+      const pageLabel = t('aiPageN', { n: current + 1 })
+      let friendlyDisplayText = displayText
+      if (friendlyDisplayText == null) {
+        if (text === t('aiBeautifyPrompt')) {
+          friendlyDisplayText = `${t('aiBeautifyBtn')} · ${pageLabel}`
+        } else if (text === t('aiFactCheckPrompt')) {
+          friendlyDisplayText = t('aiFactCheckBtn')
+        } else if (text === t('aiImagePrompt')) {
+          friendlyDisplayText = `${t('aiImageBtn')} · ${pageLabel}`
+        }
+      }
       setAiPreset({
         text,
         nonce: Date.now(),
         autoRun,
-        displayText,
+        displayText: friendlyDisplayText,
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
         ...(slideShot ? { slideShot } : {}),
+        ...(slideShots && slideShots.length > 0 ? { slideShots } : {}),
       })
     },
-    [],
+    [current],
   )
+
+  const annotationLabels: AiAnnotationLabels = {
+    title: t('aiAnnotateTitle'),
+    hint: t('aiAnnotateHint'),
+    empty: t('aiAnnotateEmpty'),
+    placeholder: t('aiAnnotatePlaceholder'),
+    add: t('aiAnnotateAdd'),
+    targetObjects: (count) => t('aiAnnotateTargetObjects', { count }),
+    targetPoint: t('aiAnnotateTargetPoint'),
+    send: (count) => t('aiAnnotateSend', { count }),
+    clear: t('aiAnnotateClear'),
+    cancel: t('paneCancel'),
+    delete: t('paneCsdDelete'),
+    close: t('paneCsdClose'),
+    page: (pageNumber) => t('aiPageN', { n: pageNumber }),
+    marker: (number) => `${t('aiAnnotateTitle')} ${number}`,
+  }
+
+  const createAiAnnotation = useCallback((annotation: NewSlideAiAnnotation) => {
+    setAiAnnotations((items) => [...items, { ...annotation, id: crypto.randomUUID() }])
+  }, [])
+
+  const updateAiAnnotation = useCallback((id: string, comment: string) => {
+    setAiAnnotations((items) =>
+      items.map((annotation) => (annotation.id === id ? { ...annotation, comment } : annotation)),
+    )
+  }, [])
+
+  const deleteAiAnnotation = useCallback((id: string) => {
+    setAiAnnotations((items) => items.filter((annotation) => annotation.id !== id))
+  }, [])
+
+  const sendAiAnnotations = useCallback(() => {
+    const ready = aiAnnotations.filter(
+      (annotation) => annotation.comment.trim() && slides[annotation.slideIndex],
+    )
+    if (ready.length === 0) return
+    pushAiPreset(
+      buildSlideAnnotationsPrompt(ready, slides),
+      true,
+      buildSlideAnnotationsDisplayText(ready, (pageNumber) => t('aiPageN', { n: pageNumber })),
+      undefined,
+      undefined,
+      referencedAnnotationSlides(ready),
+    )
+    setAnnotationMode(false)
+    setAiAnnotations([])
+  }, [aiAnnotations, pushAiPreset, slides])
 
   const applySlide = useCallback((slideIndex: number, updated: RenderSlide) => {
     setSlides((s) => s.map((sl, i) => (i === slideIndex ? updated : sl)))
@@ -964,6 +1046,8 @@ export function App() {
     setSlides(all)
     if (goTo != null) setCurrent(goTo)
     setSelectedIds([])
+    setAnnotationMode(false)
+    setAiAnnotations([])
     setEditing(null)
     setDirty(true)
   }, [])
@@ -2258,6 +2342,7 @@ export function App() {
       const next = tool !== 'select' && inkTool === tool ? 'select' : tool
       setInkTool(next)
       if (next !== 'select') {
+        setAnnotationMode(false)
         setSelectedIds([])
         setEditing(null)
       }
@@ -2742,11 +2827,34 @@ export function App() {
                           <GensparkMark size={14} />
                           <span>Genspark AI</span>
                         </button>
+                        <span className="stage-ai-divider" aria-hidden="true" />
+                        <button
+                          className={`stage-ai-btn${annotationMode ? ' active annotation-active' : ''}`}
+                          title={t('aiAnnotateHint')}
+                          aria-pressed={annotationMode}
+                          onClick={() => {
+                            const next = !annotationMode
+                            setAnnotationMode(next)
+                            if (next) {
+                              setShowAi(false)
+                              localStorage.setItem('ai-slides-show-ai', '0')
+                            }
+                            setInkTool('select')
+                            setEditing(null)
+                            setEditingCell(null)
+                            setEnteredGroupId(null)
+                          }}
+                        >
+                          <NotePencil size={14} weight={annotationMode ? 'fill' : 'regular'} />
+                          <span>{t('aiAnnotateBtn')}</span>
+                          {aiAnnotations.length > 0 && (
+                            <span className="stage-ai-count">{aiAnnotations.length}</span>
+                          )}
+                        </button>
                         {/* Same one-click presets as the Home tab; hidden instead of
                         disabled while the deck has no real content */}
                         {!deckEmpty && (
                           <>
-                            <span className="stage-ai-divider" aria-hidden="true" />
                             <button
                               className="stage-ai-btn"
                               title={t('aiBeautifyPrompt')}
@@ -2887,6 +2995,18 @@ export function App() {
                                       }
                                     : null
                               }
+                            />
+                            <AiAnnotationLayer
+                              slide={slide}
+                              slideIndex={current}
+                              annotations={aiAnnotations}
+                              mode={annotationMode}
+                              zoom={zoom}
+                              selectedIds={selectedIds}
+                              labels={annotationLabels}
+                              onCreate={createAiAnnotation}
+                              onUpdate={updateAiAnnotation}
+                              onDelete={deleteAiAnnotation}
                             />
                             {showGrid && <div className="grid-overlay" />}
                             {showGuides &&
@@ -3061,6 +3181,22 @@ export function App() {
                       </div>
                     </div>
                   </div>
+                  <AiAnnotationTray
+                    annotations={aiAnnotations}
+                    mode={annotationMode}
+                    labels={annotationLabels}
+                    onCloseMode={() => setAnnotationMode(false)}
+                    onClear={() => setAiAnnotations([])}
+                    onDelete={deleteAiAnnotation}
+                    onNavigate={(annotation) => {
+                      if (!slides[annotation.slideIndex]) return
+                      setCurrent(annotation.slideIndex)
+                      setSelectedIds(annotation.objectIds)
+                      setEditing(null)
+                      setEditingCell(null)
+                    }}
+                    onSend={sendAiAnnotations}
+                  />
                   {showNotes && (
                     <div className="notes-pane" style={{ height: notesHeight }}>
                       <div

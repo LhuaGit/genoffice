@@ -14,6 +14,7 @@ export {
 } from './app-menu'
 export { showOpenDialogWithMemory, showSaveDialogWithMemory } from './dialog-memory'
 export { installNavigationGuard } from './navigation-guard'
+export { broadcastRendererEvent, type RendererEventTarget } from './ipc-broadcast'
 export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-url'
 export {
   fetchWithSsrfGuard,

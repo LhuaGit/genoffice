@@ -13,8 +13,13 @@ import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import {
+  AiComposer,
+  AiProviderSettings,
+  AiTypingIndicator,
+  Markdown,
+  aiProviderSettingsText,
+} from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -220,6 +225,8 @@ interface AiPanelProps {
   onCollapse?: () => void
   /** Absolute path of the currently open file (used for chat-history persistence) */
   filePath?: string | null
+  /** Persist a provider selection made from the panel. */
+  onSettingsChange?: (settings: AiSettings) => void
 }
 
 export function AiPanel({
@@ -233,9 +240,11 @@ export function AiPanel({
   onExpand,
   onCollapse,
   filePath,
+  onSettingsChange,
 }: AiPanelProps) {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const [input, setInput] = useState('')
+  const [showProviderSettings, setShowProviderSettings] = useState(false)
   const [busy, setBusy] = useState(false)
   /** Wall-clock start of the current run, drives the elapsed badge */
   const runStartedAtRef = useRef(0)
@@ -584,22 +593,24 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktop
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
-              setChat((prev) => {
-                const next = [...prev]
-                const last = next.at(-1)
-                if (last?.role === 'assistant' && last.error) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
-                }
-                return next
+          // Only Genspark runs require an account check. Custom providers surface
+          // their own endpoint/auth errors instead of prompting for a Genspark login.
+          if (settingsRef.current.provider === 'genspark') {
+            void window.desktop
+              .aiGskStatus()
+              .then((status) => {
+                if (status.loggedIn) return
+                setChat((prev) => {
+                  const next = [...prev]
+                  const last = next.at(-1)
+                  if (last?.role === 'assistant' && last.error) {
+                    next[next.length - 1] = { ...last, loginRequired: true }
+                  }
+                  return next
+                })
               })
-            })
-            .catch(() => {})
+              .catch(() => {})
+          }
           setBusy(false)
         },
       },
@@ -852,6 +863,14 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setShowProviderSettings(true)}
+            title={aiProviderSettingsText(lang, 'open')}
+            aria-label={aiProviderSettingsText(lang, 'open')}
+          >
+            ⚙
+          </button>
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChatTitle')}>
               <IconNewChat size={16} />
@@ -1041,6 +1060,14 @@ export function AiPanel({
           ))}
         </div>
       )}
+
+      <AiProviderSettings
+        open={showProviderSettings}
+        lang={lang}
+        settings={settings}
+        onSave={onSettingsChange ?? (() => undefined)}
+        onClose={() => setShowProviderSettings(false)}
+      />
 
       <div className="ai-composer">
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}

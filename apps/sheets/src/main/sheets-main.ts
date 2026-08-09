@@ -25,6 +25,7 @@ import {
   shell,
   systemPreferences,
   WebContentsView,
+  webContents,
 } from 'electron'
 import type {
   IpcMainInvokeEvent,
@@ -36,6 +37,7 @@ import type {
 import { z } from 'zod'
 import {
   appMenuLabels,
+  broadcastRendererEvent,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
@@ -2109,9 +2111,6 @@ export function registerSheetsAiIpc(): void {
     sessionFor(event)
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings that chose
-    // another provider are reset
-    settings.provider = 'genspark'
     return settings
   })
 
@@ -2135,6 +2134,11 @@ export function registerSheetsAiIpc(): void {
     sessionFor(event)
     const settings = aiSettingsInputSchema.parse(input)
     writeJson(SETTINGS_PATH(), settings)
+    broadcastRendererEvent(
+      webContents.getAllWebContents(),
+      IPC_CHANNELS.aiSettingsChanged,
+      settings,
+    )
   })
 
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
@@ -2145,7 +2149,7 @@ export function registerSheetsAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
+    if (!config || (!config.apiKey && provider !== 'custom')) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
@@ -2175,7 +2179,7 @@ export function registerSheetsAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (!config.apiKey && provider !== 'custom')) {
       send({
         requestId,
         type: 'error',

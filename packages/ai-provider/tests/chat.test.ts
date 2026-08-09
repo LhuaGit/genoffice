@@ -93,6 +93,23 @@ describe('chatForProvider', () => {
     )
   })
 
+  it('custom: omits Authorization when a local endpoint has no API key', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await chatForProvider(
+      'custom',
+      { apiKey: '', model: 'local-model', baseUrl: 'http://localhost:11434/v1' },
+      'sys',
+      'hi',
+    )
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(request.headers).toEqual({ 'Content-Type': 'application/json' })
+  })
+
   it('custom: rejects without a base URL, without calling fetch', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

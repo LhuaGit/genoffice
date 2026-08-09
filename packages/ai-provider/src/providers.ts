@@ -104,7 +104,9 @@ export function defaultAiSettings(
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }
-  return { provider: 'genspark', providers }
+  // A local/custom endpoint is the privacy-preserving default. Genspark remains
+  // available as an explicit provider, but no account is required to configure AI.
+  return { provider: 'custom', providers }
 }
 
 /**

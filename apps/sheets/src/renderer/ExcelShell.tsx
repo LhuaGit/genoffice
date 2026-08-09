@@ -15,11 +15,12 @@ import { GoToDialog } from './GoToDialog'
 import { useI18n, type StringKey } from './i18n/locale'
 import { NameManagerDialog, type DefinedNameAction, type DefinedNameRow } from './NameManagerDialog'
 import { categoryOptionForPattern, NUMBER_FORMAT_CATEGORIES } from './number-format'
-import { type SelectionFormat } from './selection-format'
+import type { SelectionFormat } from './selection-format'
 
 import type { ChartSeriesVisualState } from '../domain/chart-visual'
 import type { ChangePlan } from '../domain/workbook.types'
 import type { AttachmentMeta } from '../shared/desktop-api'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import {
   PivotDialog,
@@ -127,6 +128,8 @@ interface ExcelShellProps {
   readonly sheetHasContent: boolean
   /// true while the real LLM agent is running (composer disabled meanwhile).
   readonly aiBusy: boolean
+  readonly aiSettings: AiSettings | null
+  readonly onSettingsChange: (settings: AiSettings) => void
   readonly chat: readonly AiChatMessage[]
   readonly historicChat?: readonly AiChatMessage[]
   /// Chat attachments (chips + 📎 button + drag-and-drop), same structure as the
@@ -222,6 +225,8 @@ export function ExcelShell({
   selectionFormat,
   sheetHasContent,
   aiBusy,
+  aiSettings,
+  onSettingsChange,
   chat,
   historicChat,
   attachments,
@@ -432,6 +437,8 @@ export function ExcelShell({
           prompt={prompt}
           preview={preview}
           aiBusy={aiBusy}
+          settings={aiSettings}
+          onSettingsChange={onSettingsChange}
           onPromptChange={onPromptChange}
           onSend={onSend}
           onStop={onStop}

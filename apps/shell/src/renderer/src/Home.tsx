@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
+import { GearSix } from '@phosphor-icons/react'
 import logoLockup from './assets/genoffice-logo.svg'
 import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
@@ -18,6 +19,7 @@ import type {
 import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
+import { Settings } from './Settings'
 
 declare global {
   interface Window {
@@ -1470,6 +1472,7 @@ function CloudProjectsView() {
 export function Home() {
   const i18n = useI18n()
   const { t, lang } = i18n
+  const [section, setSection] = useState<'home' | 'settings'>('home')
   // ── Paged list state (rows loaded for the current view + filter) ──
   const [entries, setEntries] = useState<RecentEntry[]>([])
   /** total count under the current view + filter (not just the loaded rows) */
@@ -1726,6 +1729,7 @@ export function Home() {
     projectFileEntries.length > 0 && projSelectedPaths.length === projectFileEntries.length
 
   const changeView = (next: 'recent' | 'starred') => {
+    setSection('home')
     setView(next)
     setSelected(new Set())
     setRowMenu(null)
@@ -2358,7 +2362,12 @@ export function Home() {
 
         <nav className="sidebar-nav">
           <button
-            className={`nav-item${view === 'recent' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${section === 'home' && view === 'recent' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            aria-current={
+              section === 'home' && view === 'recent' && !selectedProjectId && !cloudMode
+                ? 'page'
+                : undefined
+            }
             onClick={() => {
               changeView('recent')
               setSelectedProjectId(null)
@@ -2378,7 +2387,12 @@ export function Home() {
             <span className="nav-count">{navCounts.recent}</span>
           </button>
           <button
-            className={`nav-item${view === 'starred' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${section === 'home' && view === 'starred' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            aria-current={
+              section === 'home' && view === 'starred' && !selectedProjectId && !cloudMode
+                ? 'page'
+                : undefined
+            }
             onClick={() => {
               changeView('starred')
               setSelectedProjectId(null)
@@ -2400,6 +2414,7 @@ export function Home() {
             <button
               className={`nav-item${cloudMode && !selectedProjectId ? ' active' : ''}`}
               onClick={() => {
+                setSection('home')
                 setCloudMode(true)
                 setSelectedProjectId(null)
                 setSelected(new Set())
@@ -2443,6 +2458,7 @@ export function Home() {
               projects={projects}
               selectedId={selectedProjectId}
               onSelect={(id) => {
+                setSection('home')
                 setSelectedProjectId(id)
                 // reset list-selection state on any project switch (paths are
                 // shared between the plain view and project views)
@@ -2454,10 +2470,32 @@ export function Home() {
           </>
         )}
 
+        <div className="settings-nav">
+          <button
+            className={`nav-item settings-nav-item${section === 'settings' ? ' active' : ''}`}
+            aria-current={section === 'settings' ? 'page' : undefined}
+            onClick={() => {
+              setSection('settings')
+              setSelectedProjectId(null)
+              setSelected(new Set())
+              setRowMenu(null)
+            }}
+          >
+            <GearSix
+              size={17}
+              weight={section === 'settings' ? 'fill' : 'regular'}
+              aria-hidden="true"
+            />
+            <span className="nav-label">{t('navSettings')}</span>
+          </button>
+        </div>
+
         <AccountEntry onStatusChange={handleAccountStatus} />
       </aside>
 
-      {selectedProjectId ? (
+      {section === 'settings' ? (
+        <Settings />
+      ) : selectedProjectId ? (
         renderProjectContent()
       ) : cloudMode ? (
         <CloudProjectsView />
