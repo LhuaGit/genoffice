@@ -1,0 +1,117 @@
+name: Build Windows Installer
+
+# Pushes to the integration branch produce a downloadable Actions artifact.
+# A manual run may also attach the generated files to an existing GitHub
+# Release by supplying its tag (for example, 0.5.0-pi-qc.1).
+on:
+  push:
+    branches: ['feature/baishi_custom-ai-provider-annotations']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing GitHub Release tag to upload to (leave empty for artifact only)'
+        required: false
+        default: ''
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch, 2026-07
+        with:
+          toolchain: stable
+
+      - name: Cache cargo (xlsx-sidecar)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/sheets/native/xlsx-engine
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build NSIS installer
+        run: npm run dist:win
+
+      - name: Validate packaged application
+        run: |
+          $release = Join-Path $PWD 'apps/shell/release'
+          $app = Join-Path $release 'win-unpacked/GenOffice.exe'
+          $sidecar = Join-Path $release 'win-unpacked/resources/native/xlsx-sidecar.exe'
+          if (-not (Test-Path $app -PathType Leaf)) {
+            throw "Packaged application missing: $app"
+          }
+          if (-not (Test-Path $sidecar -PathType Leaf)) {
+            throw "Packaged xlsx sidecar missing: $sidecar"
+          }
+
+          $installer = Get-ChildItem -Path $release -Filter '*.exe' -File |
+            Where-Object { $_.DirectoryName -eq $release } |
+            Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "NSIS installer missing from $release"
+          }
+
+          $header = [System.IO.File]::ReadAllBytes($installer.FullName)
+          if ($header.Length -lt 2 -or $header[0] -ne 0x4d -or $header[1] -ne 0x5a) {
+            throw "Installer is not a Windows PE executable: $($installer.FullName)"
+          }
+
+          Get-FileHash -Algorithm SHA256 $installer.FullName | Format-List
+          Get-AuthenticodeSignature $installer.FullName |
+            Select-Object Status, StatusMessage, SignerCertificate |
+            Format-List
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: GenOffice-windows-x64-${{ github.sha }}
+          path: |
+            apps/shell/release/*.exe
+            apps/shell/release/*.exe.blockmap
+            apps/shell/release/latest.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' }}
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: GenOffice-windows-x64-${{ github.sha }}
+          path: release-assets
+
+      - name: Upload to existing GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber

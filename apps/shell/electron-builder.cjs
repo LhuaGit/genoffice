@@ -66,6 +66,16 @@ function assertModuleTreesPresent() {
   }
 }
 
+function assertNativeSidecarPresent() {
+  const executable = process.platform === 'win32' ? 'xlsx-sidecar.exe' : 'xlsx-sidecar'
+  const rel = `../sheets/native/xlsx-engine/target/release/${executable}`
+  if (!existsSync(join(__dirname, rel))) {
+    throw new Error(
+      `electron-builder native sidecar missing: ${rel} (run npm run build -w @genoffice/sheets on the target platform first)`,
+    )
+  }
+}
+
 /** @type {import('electron-builder').Configuration} */
 const config = {
   appId: 'com.genoffice.app',
@@ -202,14 +212,16 @@ const config = {
     ],
     extraResources: [
       {
-        from: '../sheets/native/xlsx-engine/target/x86_64-pc-windows-gnu/release/xlsx-sidecar.exe',
+        // Windows CI builds this natively with the default MSVC toolchain. Its
+        // output therefore lives in target/release, just like the host-native
+        // macOS and Linux sidecars.
+        from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar.exe',
         to: 'native/xlsx-sidecar.exe',
       },
     ],
   },
-  // Unlike win (which cross-compiles the sidecar to an explicit target
-  // triple), linux takes it from cargo's host-native target/release/ — the
-  // same source mac uses. So no `arch` is pinned here: electron-builder
+  // Linux takes the sidecar from cargo's host-native target/release/ — the
+  // same layout macOS and Windows use. So no `arch` is pinned here: electron-builder
   // defaults to the build host's architecture, which is the only one the
   // sidecar was actually built for. Packaging arm64 on an x64 host, or the
   // reverse, needs a matching `cargo build --target` first.
@@ -246,6 +258,7 @@ const config = {
   },
   beforePack: async () => {
     assertModuleTreesPresent()
+    assertNativeSidecarPresent()
   },
   dmg: {
     sign: true,
