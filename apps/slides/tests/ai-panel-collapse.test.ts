@@ -32,6 +32,7 @@ const settings: AiSettings = {
   providers: Object.fromEntries(
     AI_PROVIDERS.map((p) => [p.id, { apiKey: '', model: p.defaultModel }]),
   ) as AiSettings['providers'],
+  image: { apiKey: '', model: 'gpt-image-1', baseUrl: 'https://api.openai.com/v1' },
 }
 
 function mount(element: React.ReactElement): {

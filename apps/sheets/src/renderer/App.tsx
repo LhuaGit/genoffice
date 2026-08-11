@@ -98,12 +98,8 @@ import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
 
-import {
-  AgentLoop,
-  COMPLETED_VIA_TOOLS_TEXT,
-  composeSkills,
-  type AgentImage,
-} from '@genoffice/agent-core'
+import { COMPLETED_VIA_TOOLS_TEXT, composeSkills, type AgentImage } from '@genoffice/agent-core'
+import { PiAgentLoop } from '@genoffice/pi-agent-runtime/renderer'
 import type { AiSettings } from '@genoffice/ai-provider'
 import type { WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
@@ -117,7 +113,6 @@ import {
 import { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
 import { cfRuleUnsaveableReason, iconSetSaveable } from '../gateway/xlsx-cf'
 import type { ApplyOutcome, ChangePlan } from '../domain/workbook.types'
-import { createElectronTransport } from './ai/transport'
 import type { ActiveSheetInfo, SheetsSkillDeps } from './ai/tools'
 import type { AiChatMessage } from './ai/AiChatPanel'
 import { createWorkbookSkill } from './ai/workbook-skill'
@@ -788,18 +783,16 @@ export function App(): React.JSX.Element {
   /** true once any tool of the run mutated the workbook */
   const runMutatedRef = useRef(false)
 
-  const agentLoopRef = useRef<AgentLoop | null>(null)
+  const agentLoopRef = useRef<PiAgentLoop | null>(null)
   if (!agentLoopRef.current) {
-    agentLoopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => aiSettingsRef.current!),
+    agentLoopRef.current = new PiAgentLoop({
+      getSettings: () => aiSettingsRef.current!,
       systemSuffix: aiLangDirective,
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),
         createFilesSkill(() => attachmentsRef.current),
         createSearchSkill(),
       ]),
-      // guide loading adds a tool round; the default 8 cuts off multi-step work
-      maxTurns: 24,
       events: {
         onText: (text) => {
           if (text) runLastTextRef.current = text
@@ -961,6 +954,7 @@ export function App(): React.JSX.Element {
     // intentionally have no key (for example, a local Ollama server).
     return (
       settings.provider === 'genspark' ||
+      settings.provider === 'codex' ||
       (settings.provider === 'custom' && !!config.baseUrl) ||
       !!config.apiKey
     )

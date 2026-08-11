@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
-  AgentLoop,
   composeSkills,
   IPC_STREAM_SILENCE_TIMEOUT_MS,
   type AgentImage,
   type ToolDisplay,
 } from '@genoffice/agent-core'
+import { PiAgentLoop } from '@genoffice/pi-agent-runtime/renderer'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -17,10 +17,19 @@ import {
   type PageProgressItem,
 } from './slides-skill'
 import { extractJsonObject, parseOutlineJson } from './outline-json'
+import {
+  createLocalSlidePageGenerator,
+  type SlideGenerationContext,
+} from './slide-page-generator'
 import { createFilesSkill } from './files-skill'
-import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
-import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
+import {
+  generatedPageRange,
+  isQcEnabled,
+  mergeQcPages,
+  qcSlidePage,
+  QC_MAX_PAGES,
+} from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
 import { AiProviderSettings, Markdown, aiProviderSettingsText } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
@@ -309,7 +318,7 @@ function clampPanelWidth(w: number): number {
 }
 
 function loadPanelWidth(): number {
-  const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
+  const saved = Number(window.localStorage.getItem(PANEL_WIDTH_KEY))
   return Number.isFinite(saved) && saved > 0 ? clampPanelWidth(saved) : PANEL_WIDTH_DEFAULT
 }
 
@@ -556,6 +565,8 @@ export function AiPanel({
   const runStartingRef = useRef(false)
   /** Pages landed by this run's generation calls, pending the post-generation layout QC pass */
   const qcPagesRef = useRef<number[]>([])
+  /** Generation intent for each pending page, retained only until visual QC finishes. */
+  const qcContextsRef = useRef<Map<number, SlideGenerationContext>>(new Map())
   const qcAbortRef = useRef<AbortController | null>(null)
   const qcRunningRef = useRef(false)
   /** Latest runQcPass closure; the loop's onDone (built once) calls through this ref */
@@ -610,7 +621,7 @@ export function AiPanel({
     })
   }
 
-  const loopRef = useRef<AgentLoop | null>(null)
+  const loopRef = useRef<PiAgentLoop | null>(null)
   if (!loopRef.current) {
     // The three slides generation steps (style/planning/per-page HTML) force the high-quality model (only with the anthropic provider;
     // other providers keep the user setting, avoiding passing nonexistent model names). Chat/fine-tuning still uses the user's configured model.
@@ -650,70 +661,52 @@ export function AiPanel({
           return
         }
         const requestId = crypto.randomUUID()
-        let buf = ''
         let settled = false
         const finish = (r: LlmResult, cancelUpstream = false) => {
           if (settled) return
           settled = true
           clearTimeout(to)
           signal?.removeEventListener('abort', onAbort)
-          unsub()
-          // On timeout/abort the main-process stream keeps running; it must be cancelled explicitly or orphan streams eat proxy concurrency
-          if (cancelUpstream) void window.slidesApi.aiStreamCancel(requestId)
+          // On timeout/abort the main-process Pi completion must be cancelled explicitly.
+          if (cancelUpstream) void window.piAgent.cancelCompletion(requestId)
           resolve(r)
         }
         const onAbort = () =>
           finish({ ok: false, error: tGlobal('aiErrStopped'), errKind: 'stopped' }, true)
-        // Silence watchdog, not a total-duration cap: long generations legitimately run
-        // for many minutes, and the main process re-arms us with keepalive pings on wire
-        // activity. Firing means the turn is dead (main stall / lost chunks).
-        let to: ReturnType<typeof setTimeout> | undefined
-        const armTimeout = () => {
-          clearTimeout(to)
-          to = setTimeout(
-            () =>
-              finish(
-                {
-                  ok: false,
-                  error: tGlobal('aiErrTimeout', { ms: timeoutMs }),
-                  errKind: 'timeout',
-                },
-                true,
-              ),
-            timeoutMs,
-          )
-        }
-        armTimeout()
-        const unsub = window.slidesApi.onAiStream((chunk) => {
-          if (chunk.requestId !== requestId) return
-          armTimeout() // any chunk (including pings) proves the turn is alive
-          if (chunk.type === 'delta') buf += chunk.text ?? ''
-          else if (chunk.type === 'done')
+        const to = setTimeout(
+          () =>
             finish(
-              buf.trim()
-                ? { ok: true, text: buf }
-                : { ok: false, text: buf, error: tGlobal('aiErrEmptyOutput'), errKind: 'empty' },
-            )
-          else if (chunk.type === 'error')
-            finish({
-              ok: false,
-              error: chunk.error ?? tGlobal('aiErrUnknown'),
-              // Empty gateway streams surface as errors now (ai-provider stream.ts
-              // tags them with this suffix); keep classifying them as empty output
-              // so retry ladders fail fast instead of burning billed attempts
-              ...(chunk.error?.includes('(empty stream)') ? { errKind: 'empty' as const } : {}),
-            })
-        })
+              {
+                ok: false,
+                error: tGlobal('aiErrTimeout', { ms: timeoutMs }),
+                errKind: 'timeout',
+              },
+              true,
+            ),
+          timeoutMs,
+        )
         signal?.addEventListener('abort', onAbort, { once: true })
-        // If invoke itself rejects (IPC-layer failure), fail immediately instead of waiting out the timeout
-        window.slidesApi
-          .aiStream({
+        window.piAgent
+          .complete({
             requestId,
             settings,
-            system,
-            messages: [{ role: 'user', text: user }],
+            systemPrompt: system,
+            instruction: user,
             ...(maxTokens ? { maxTokens } : {}),
+            timeoutMs,
           })
+          .then((result) =>
+            finish(
+              result.ok && result.text?.trim()
+                ? { ok: true, text: result.text }
+                : {
+                    ok: false,
+                    text: result.text,
+                    error: result.error ?? tGlobal('aiErrEmptyOutput'),
+                    ...(!result.text?.trim() ? { errKind: 'empty' as const } : {}),
+                  },
+            ),
+          )
           .catch((e) =>
             finish({
               ok: false,
@@ -748,17 +741,25 @@ export function AiPanel({
       return runLlmAttempt(cur, system, user, timeoutMs, signal, maxTokens)
     }
 
+    const localPageGenerator = createLocalSlidePageGenerator({
+      complete: ({ system, user, signal, maxTokens }) =>
+        runLlmOnce(system, user, IPC_STREAM_SILENCE_TIMEOUT_MS, true, signal, maxTokens),
+      render: (args) => window.slidesApi.localRenderPage(args),
+    })
+
     const access: DeckAccess = {
       getSlides: () => slidesRef.current,
       getCurrent: () => currentRef.current,
       getSelectedIds: () => selectedRef.current,
       applySlide: (i, updated) => applySlideRef.current(i, updated),
       applyDeck: (all, goTo) => applyDeckRef.current(all, goTo),
+      pageGenerator: localPageGenerator,
       generateFromHtml: async (
         pagesHtml: string[],
         mode?: 'replace' | 'append' | 'insert_at',
         deckName?: string,
         insertAt?: number,
+        qcContexts?: SlideGenerationContext[],
       ) => {
         try {
           const res = await window.slidesApi.htmlToPptx(
@@ -786,10 +787,25 @@ export function AiPanel({
             applyDeckRef.current(res.slides, insertedIndex ?? appendedFrom)
             // When the draft lands successfully, path is the real path; notify App to update the title bar
             if (res.path) onPathChangeRef.current?.(res.path)
-            qcPagesRef.current = mergeQcPages(qcPagesRef.current, mode ?? 'replace', {
+            const landingMode = mode ?? 'replace'
+            const landing = {
               pages: res.slides.length,
               appendedFrom,
               ...(insertedIndex !== undefined ? { insertedIndex } : {}),
+            }
+            qcPagesRef.current = mergeQcPages(qcPagesRef.current, landingMode, landing)
+            if (landingMode === 'replace') {
+              qcContextsRef.current.clear()
+            } else if (landingMode === 'insert_at' && insertedIndex !== undefined) {
+              const shifted = new Map<number, SlideGenerationContext>()
+              for (const [index, context] of qcContextsRef.current) {
+                shifted.set(index >= insertedIndex ? index + 1 : index, context)
+              }
+              qcContextsRef.current = shifted
+            }
+            generatedPageRange(landingMode, landing).forEach((pageIndex, offset) => {
+              const context = qcContexts?.[offset]
+              if (context) qcContextsRef.current.set(pageIndex, context)
             })
             return {
               ok: true,
@@ -811,7 +827,11 @@ export function AiPanel({
           return { ok: false, error: e instanceof Error ? e.message : String(e) }
         }
       },
-      regenerateSlide: async (slideIndex: number, html: string) => {
+      regenerateSlide: async (
+        slideIndex: number,
+        html: string,
+        qcContext?: SlideGenerationContext,
+      ) => {
         try {
           const res = await window.slidesApi.htmlToPptx(
             [html],
@@ -826,6 +846,7 @@ export function AiPanel({
               pages: res.slides.length,
               insertedIndex: slideIndex,
             })
+            if (qcContext) qcContextsRef.current.set(slideIndex, qcContext)
             return {
               ok: true,
               imageFailures:
@@ -1076,8 +1097,8 @@ export function AiPanel({
           .map((a) => a.name),
     }
     accessRef.current = access
-    loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current),
+    loopRef.current = new PiAgentLoop({
+      getSettings: () => settingsRef.current,
       systemSuffix: aiLangDirective,
       skill: composeSkills('slides+files', '', [
         createSlidesSkill(access),
@@ -1086,8 +1107,6 @@ export function AiPanel({
           (path) => readAttachmentPathsRef.current.add(path),
         ),
       ]),
-      // Page-by-page deck generation needs more tool rounds
-      maxTurns: 24,
       events: {
         onText: (text) => patchLastAssistant({ text }),
         onToolStart: (call) => {
@@ -1160,7 +1179,10 @@ export function AiPanel({
           void finishHistoryBatch().finally(() => {
             setBusy(false)
             // Post-generation layout QC: only after a completed run that landed generated pages
-            if (cancelled) qcPagesRef.current = []
+            if (cancelled) {
+              qcPagesRef.current = []
+              qcContextsRef.current.clear()
+            }
             else if (qcPagesRef.current.length > 0) void runQcPassRef.current()
           })
           // Persist the assistant message (deckProgress not stored; tools store the whole run's full activity) —
@@ -1171,6 +1193,7 @@ export function AiPanel({
         },
         onError: (error) => {
           qcPagesRef.current = []
+          qcContextsRef.current.clear()
           setChat((prev) => {
             const next = [...prev]
             // the loop rolled this run's user message out of the model context — surface that
@@ -1374,9 +1397,9 @@ export function AiPanel({
 
   /**
    * Post-generation layout QC: each page landed by this run gets one focused vision pass in a
-   * fresh AgentLoop (screenshot + inventory → constrained fixes via execute_slide_script).
-   * Each page's edits sit in their own history batch; if the deterministic audit says the page
-   * got worse, that batch is rolled back. Progress streams into one assistant chat entry.
+   * fresh AgentLoops (screenshot review → constrained fix → screenshot verification).
+   * Each page's edits sit in their own history batch; deterministic or visual regressions are
+   * rolled back. Progress streams into one assistant chat entry.
    */
   const runQcPass = async () => {
     const pages = qcPagesRef.current
@@ -1387,7 +1410,6 @@ export function AiPanel({
     const controller = new AbortController()
     qcAbortRef.current = controller
     const capped = pages.slice(0, QC_MAX_PAGES)
-    const transport = createElectronTransport(() => settingsRef.current)
     const header = tGlobal('aiQcStart', { count: capped.length })
     const lines: string[] = []
     const renderEntry = () => [header, ...lines].join('\n')
@@ -1397,33 +1419,55 @@ export function AiPanel({
     try {
       for (const page of capped) {
         if (controller.signal.aborted) break
+        const generationContext = qcContextsRef.current.get(page)
+        qcContextsRef.current.delete(page)
         const shot = await captureSlideShot(page)
         if (!shot) {
-          if (slidesRef.current[page]) lines.push(tGlobal('aiQcPageSkipped', { n: page + 1 }))
+          if (slidesRef.current[page]) {
+            lines.push(
+              tGlobal('aiQcPageFailed', {
+                n: page + 1,
+                error: 'Slide screenshot capture failed; visual QC did not run',
+              }),
+            )
+          }
           continue
         }
         const batchOpened = await window.slidesApi.beginHistoryBatch()
         const result = await qcSlidePage({
           access,
-          transport,
+          getSettings: () => settingsRef.current,
           pageIndex: page,
           screenshot: shot,
+          ...(generationContext ? { generationContext } : {}),
+          captureScreenshot: () => captureSlideShot(page),
           systemSuffix: aiLangDirective,
           signal: controller.signal,
         })
         const batchId = batchOpened ? await window.slidesApi.endHistoryBatch() : null
         if (controller.signal.aborted) break
         if (result.error) {
+          // A mutation without a successful verification screenshot is not accepted.
+          if (result.edited && typeof batchId === 'number') {
+            const restored = await window.slidesApi.aiSnapshotRestore(batchId)
+            if (restored)
+              applyDeckRef.current(restored, Math.min(currentRef.current, restored.length - 1))
+          }
           lines.push(tGlobal('aiQcPageFailed', { n: page + 1, error: result.error }))
-        } else if (result.edited && result.postIssues > result.preIssues) {
-          // The fix made the deterministic audit worse — undo this page's batch
+        } else if (
+          result.edited &&
+          (result.postIssues > result.preIssues ||
+            result.postVisualIssues > result.preVisualIssues ||
+            result.postVisualScore < result.preVisualScore)
+        ) {
+          // The fix made either deterministic or screenshot review worse — undo this page's batch.
           if (typeof batchId === 'number') {
             const restored = await window.slidesApi.aiSnapshotRestore(batchId)
             if (restored)
               applyDeckRef.current(restored, Math.min(currentRef.current, restored.length - 1))
           }
           lines.push(tGlobal('aiQcPageReverted', { n: page + 1 }))
-        } else if (result.edited) {
+        } else if (result.edited && result.postIssues === 0 && result.visualPassed) {
           const summary =
             result.reply && result.reply.toUpperCase() !== 'OK'
               ? result.reply
@@ -1436,16 +1480,23 @@ export function AiPanel({
               [{ id: batchId, label, time: new Date().toLocaleTimeString() }, ...prev].slice(0, 20),
             )
           }
+        } else if (result.postIssues > 0 || !result.visualPassed) {
+          const unresolved =
+            result.visualIssues.slice(0, 2).join('; ') ||
+            `${result.postIssues} deterministic issue(s) remain`
+          lines.push(tGlobal('aiQcPageFailed', { n: page + 1, error: unresolved }))
         } else {
           lines.push(tGlobal('aiQcPageOk', { n: page + 1 }))
         }
         patchLastAssistant({ text: renderEntry() })
       }
       if (pages.length > capped.length) {
+        for (const page of pages.slice(QC_MAX_PAGES)) qcContextsRef.current.delete(page)
         lines.push(tGlobal('aiQcCapped', { count: pages.length - capped.length }))
       }
       if (controller.signal.aborted) lines.push(tGlobal('aiQcStopped'))
     } finally {
+      for (const page of pages) qcContextsRef.current.delete(page)
       qcRunningRef.current = false
       qcAbortRef.current = null
       const finalText = renderEntry()
@@ -1478,6 +1529,8 @@ export function AiPanel({
   const newChat = () => {
     dismissClarify()
     qcAbortRef.current?.abort()
+    qcPagesRef.current = []
+    qcContextsRef.current.clear()
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
@@ -1560,7 +1613,7 @@ export function AiPanel({
       document.body.style.userSelect = ''
       setResizing(false)
       setPanelWidth((w) => {
-        localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(w)))
+        window.localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(w)))
         return w
       })
     }

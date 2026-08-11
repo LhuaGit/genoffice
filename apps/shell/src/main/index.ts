@@ -63,6 +63,7 @@ import {
   setGskProxyUrl,
   startGenofficeLogin,
 } from '@genoffice/ai-search'
+import { registerPiAgentIpc } from '@genoffice/pi-agent-runtime/main'
 
 import {
   buildDocsMenu,
@@ -2521,6 +2522,7 @@ app.on('second-instance', (_event, argv, _cwd, additionalData) => {
 installNavigationGuard(app)
 installContextMenu(app, () => contextMenuLabels(currentLang()))
 registerAiIpc()
+registerPiAgentIpc()
 registerProjectIpc()
 registerDocsIpc()
 registerHomeIpc()

@@ -1,0 +1,32 @@
+{
+  "name": "@genoffice/pi-agent-runtime",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Pi Coding Agent runtime and AgentSkill tool bridge for GenOffice",
+  "exports": {
+    ".": "./src/index.ts",
+    "./main": "./src/main.ts",
+    "./preload": "./src/protocol.ts",
+    "./renderer": "./src/renderer.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@genoffice/agent-core": "*",
+    "@genoffice/ai-provider": "*",
+    "@genoffice/ai-search": "*",
+    "@mariozechner/pi-ai": "0.73.1",
+    "@mariozechner/pi-coding-agent": "0.73.1",
+    "typebox": "^1.3.11"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

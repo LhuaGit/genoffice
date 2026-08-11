@@ -31,6 +31,7 @@ import {
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
+  fetchRemoteImage,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
 } from '@genoffice/electron-utils'
@@ -147,6 +148,8 @@ import {
   type Paragraph,
   type Slide,
   type TextElement,
+  generateLocalSlidePptx,
+  type LocalSlideSpec,
 } from '@genoffice/pptx-engine'
 import { buildRenderSlide, EMU_PER_PX_96, type RenderSlide } from '@genoffice/pptx-render'
 import { refineComplexWidths, shapedMetricsReady } from './shaped-metrics'
@@ -251,6 +254,7 @@ import {
   type Session,
 } from './session-state'
 import { registerAiIpc, registerSlidesOnlyAiIpc } from './ai-ipc'
+import { registerPiAgentIpc } from '@genoffice/pi-agent-runtime/main'
 
 /** One slide, copied from any deck open in this process, waiting to be pasted into another. */
 let slideClipboard: { bundle: SlideBundle; png?: string } | null = null
@@ -258,10 +262,19 @@ let slideClipboard: { bundle: SlideBundle; png?: string } | null = null
 /** The immediately preceding slide paste per webContents, so the paste-options floater can redo it with another mode. */
 const lastSlidePaste = new Map<number, { afterIndex: number; undoLen: number }>()
 
-// Cloud-generated single-page pptx: marker strings travel in pagesHtml slots; only paths issued
-// by slides:cloud-page-generate are readable (the renderer can't point the reader at arbitrary files)
-const CLOUD_PAGE_PREFIX = 'cloudpptx:'
-const issuedCloudPages = new Set<string>()
+// Generated single-page pptx marker: both local and cloud adapters land through this narrow
+// capability. Only paths issued by this process are readable; renderer-supplied paths are rejected.
+const PAGE_PPTX_PREFIX = 'pagepptx:'
+const issuedPagePptx = new Set<string>()
+
+async function issuePagePptx(bytes: Uint8Array): Promise<string> {
+  const dir = join(app.getPath('temp'), 'genoffice-generated-pages')
+  await mkdir(dir, { recursive: true })
+  const path = join(dir, `${randomUUID()}.pptx`)
+  await writeFile(path, bytes)
+  issuedPagePptx.add(path)
+  return PAGE_PPTX_PREFIX + path
+}
 import { registerPresenterIpc } from './presenter-show'
 import { registerAttachmentIpc } from './attachments-ipc'
 
@@ -1297,6 +1310,46 @@ export function registerSlidesIpc(): void {
   ipcMain.handle('slides:cloud-gen-status', () => ({ enabled: cloudSlideEnabled() }))
 
   ipcMain.handle(
+    'slides:local-page-render',
+    async (
+      _e,
+      op: { spec: LocalSlideSpec; width?: number; height?: number },
+    ): Promise<{ ok: boolean; marker?: string; error?: string }> => {
+      try {
+        const spec: LocalSlideSpec = {
+          background: String(op.spec?.background ?? '#FFFFFF'),
+          elements: [],
+        }
+        for (const element of Array.isArray(op.spec?.elements) ? op.spec.elements : []) {
+          if (element.type !== 'image' || !element.url) {
+            spec.elements.push(element)
+            continue
+          }
+          const response = await fetchRemoteImage(element.url)
+          if (!response?.ok) continue
+          const contentType = response.headers.get('content-type') ?? 'image/png'
+          const mime =
+            contentType.includes('jpeg') || contentType.includes('jpg')
+              ? 'image/jpeg'
+              : contentType.includes('gif')
+                ? 'image/gif'
+                : 'image/png'
+          const base64 = Buffer.from(await response.arrayBuffer()).toString('base64')
+          spec.elements.push({ ...element, data: `${mime};base64,${base64}` })
+        }
+        const bytes = await generateLocalSlidePptx(
+          spec,
+          Number(op.width) || 1280,
+          Number(op.height) || 720,
+        )
+        return { ok: true, marker: await issuePagePptx(bytes) }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+  )
+
+  ipcMain.handle(
     'slides:cloud-page-generate',
     async (
       _e,
@@ -1328,12 +1381,7 @@ export function registerSlidesIpc(): void {
         console.log(
           `[cloud-slide] page generated: tier=${tier} model=${model} bytes=${bytes.length} ms=${Date.now() - started}`,
         )
-        const dir = join(app.getPath('temp'), 'genoffice-cloud-pages')
-        mkdirSync(dir, { recursive: true })
-        const path = join(dir, `${randomUUID()}.pptx`)
-        await writeFile(path, bytes)
-        issuedCloudPages.add(path)
-        return { ok: true, marker: CLOUD_PAGE_PREFIX + path }
+        return { ok: true, marker: await issuePagePptx(bytes) }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -1359,20 +1407,20 @@ export function registerSlidesIpc(): void {
         })
       | { error: string }
     > => {
-      // Every page arrives as a cloud marker (cloudpptx:<path> written by
-      // slides:cloud-page-generate, pointing at a one-slide pptx temp file); this handler only
-      // reads and lands the bytes.
+      // Every page arrives as an issued marker (pagepptx:<path>) from either the local or cloud
+      // page adapter. This handler only reads and lands the bytes.
       // replace: assemble the whole batch into one multi-page pptx as the new deck base.
       // append: merge the "new pages" one by one into the existing deck via mergeSlideFromPptx
       // (earlier pages are untouched).
-      const readCloudPage = async (marker: string): Promise<{ bytes: Uint8Array }> => {
-        if (!marker.startsWith(CLOUD_PAGE_PREFIX)) throw new Error('expected a cloud page marker')
-        const path = marker.slice(CLOUD_PAGE_PREFIX.length)
-        if (!issuedCloudPages.has(path)) throw new Error('unknown cloud page marker')
+      const readGeneratedPage = async (marker: string): Promise<{ bytes: Uint8Array }> => {
+        if (!marker.startsWith(PAGE_PPTX_PREFIX))
+          throw new Error('expected a generated page marker')
+        const path = marker.slice(PAGE_PPTX_PREFIX.length)
+        if (!issuedPagePptx.has(path)) throw new Error('unknown generated page marker')
         return { bytes: new Uint8Array(await readFile(path)) }
       }
       const assembleDeck = async (): Promise<{ bytes: Uint8Array }> => {
-        const perPage = await Promise.all(pagesHtml.map(readCloudPage))
+        const perPage = await Promise.all(pagesHtml.map(readGeneratedPage))
         const base = await openPptx(perPage[0]!.bytes)
         for (const one of perPage.slice(1)) await mergeSlideFromPptx(base, one.bytes)
         for (const s of base.deck.slides) promoteSlideBackground(s, base.deck.size)
@@ -1398,7 +1446,7 @@ export function registerSlidesIpc(): void {
           let lastErr: string | undefined
           for (const html of pagesHtml) {
             try {
-              const one = await readCloudPage(html)
+              const one = await readGeneratedPage(html)
               const slide = await mergeSlideFromPptx(opened, one.bytes)
               if (slide) {
                 promoteSlideBackground(slide, opened.deck.size)
@@ -1453,7 +1501,7 @@ export function registerSlidesIpc(): void {
           if (!html || pagesHtml.length !== 1) {
             return { error: tm('errReplaceNeedsOne') }
           }
-          const one = await readCloudPage(html)
+          const one = await readGeneratedPage(html)
           pushHistory(existing)
           const rollback = () => {
             const snap = existing.undoStack.pop()
@@ -1503,7 +1551,7 @@ export function registerSlidesIpc(): void {
           if (!html || pagesHtml.length !== 1) {
             return { error: tm('errInsertNeedsOne') }
           }
-          const one = await readCloudPage(html)
+          const one = await readGeneratedPage(html)
           pushHistory(existing)
           const rollback = () => {
             const snap = existing.undoStack.pop()
@@ -3976,6 +4024,7 @@ export function startSlidesStandalone(): void {
     setUiLang(normalizeLang(process.env.GENOFFICE_LANG ?? app.getLocale()))
     registerSlidesIpc()
     registerAiIpc()
+    registerPiAgentIpc()
     registerProjectIpc()
     Menu.setApplicationMenu(buildSlidesMenu())
     const win = createSlidesWindow(pendingOpenPath)

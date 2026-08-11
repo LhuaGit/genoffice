@@ -1,0 +1,4 @@
+interface:
+  display_name: "PPT Beautify Planner"
+  short_description: "Design-guided beautification for existing GenOffice slides"
+  default_prompt: "Use $ppt-beautify-planner to improve the current slide while preserving its content."

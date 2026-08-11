@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
-import { AgentLoop } from '@genoffice/agent-core'
+import { PiAgentLoop } from '@genoffice/pi-agent-runtime/renderer'
 import type { AiSettings } from '@genoffice/ai-provider'
 import {
   AiComposer,
@@ -14,7 +14,6 @@ import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import { createPdfSkill } from './pdf-skill'
-import { createElectronTransport } from './transport'
 import type { PdfAiDeps } from './tools'
 
 const PANEL_WIDTH_KEY = 'pdf-ai-panel-width'
@@ -106,7 +105,7 @@ export function AiPanel({
   }
 
   // The loop is built once; every mutable value goes through a ref getter
-  const loopRef = useRef<AgentLoop | null>(null)
+  const loopRef = useRef<PiAgentLoop | null>(null)
   if (!loopRef.current) {
     const deps: PdfAiDeps = {
       doc: () => apiRef.current.doc(),
@@ -124,8 +123,8 @@ export function AiPanel({
       rotatePage: (idx, dir) => apiRef.current.rotatePage(idx, dir),
       deletePage: (idx) => apiRef.current.deletePage(idx),
     }
-    loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current!),
+    loopRef.current = new PiAgentLoop({
+      getSettings: () => settingsRef.current!,
       skill: createPdfSkill(deps),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {

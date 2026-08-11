@@ -271,6 +271,7 @@ const DEFAULT_SETTINGS: AiSettings = {
       { apiKey: '', model: p.defaultModel, baseUrl: p.needsBaseUrl ? '' : undefined },
     ]),
   ) as AiSettings['providers'],
+  image: { apiKey: '', model: 'gpt-image-1', baseUrl: 'https://api.openai.com/v1' },
 }
 
 export function App() {

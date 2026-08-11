@@ -502,9 +502,11 @@ export function App() {
       const el = stageWrapRef.current
       const availW =
         (el?.clientWidth ?? window.innerWidth - (showThumbs ? thumbsW : 0) - (showAi ? 360 : 34)) -
-        56
-      // -72: vertical padding is 48 (AI-bar headroom) + 32, minus the same 8px slack as width
-      const availH = (el?.clientHeight ?? window.innerHeight - 150) - 72
+        72
+      // Reserve the full stage padding (64px horizontal / 80px vertical) plus an
+      // 8px gutter. Letting fit zoom consume part of the padding can toggle the
+      // scrollbars on and off, feeding ResizeObserver an endless size oscillation.
+      const availH = (el?.clientHeight ?? window.innerHeight - 150) - 88
       return Math.min(availW / s.widthPx, availH / s.heightPx)
     },
     [showThumbs, showAi, thumbsW],
@@ -2882,7 +2884,9 @@ export function App() {
                             <button
                               className="stage-ai-btn"
                               title={t('aiImagePrompt')}
-                              onClick={() => pushAiPreset(t('aiImagePrompt'))}
+                              onClick={() =>
+                                pushAiPreset(t('aiImagePrompt'), true, undefined, undefined, true)
+                              }
                             >
                               <IconAiImage size={14} />
                               <span>{t('aiImageBtn')}</span>

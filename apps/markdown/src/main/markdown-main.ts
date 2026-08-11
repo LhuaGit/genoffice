@@ -23,6 +23,7 @@ import {
   showSaveDialogWithMemory,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
+import { registerPiAgentIpc } from '@genoffice/pi-agent-runtime/main'
 import { atomicWriteFile } from './atomic-write'
 import { MARKDOWN_CHANNELS } from '../shared/ipc'
 import type {
@@ -729,6 +730,7 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
 
 export function createMarkdownView(openPath?: string | null): WebContentsView {
   registerMarkdownIpc()
+  registerPiAgentIpc()
   const view = new WebContentsView({
     webPreferences: {
       preload: runtime.preloadPath,
@@ -754,6 +756,7 @@ export function startMarkdownStandalone(): void {
   })
   void app.whenReady().then(() => {
     registerMarkdownIpc()
+    registerPiAgentIpc()
     const win = new BrowserWindow({
       width: 1200,
       height: 850,

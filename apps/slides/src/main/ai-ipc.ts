@@ -4,13 +4,14 @@
  * to avoid renderer CORS), search tools, and the slides-only ai:* channels
  * (image generation, media analysis, style templates).
  */
-import { app, ipcMain, shell, webContents } from 'electron'
+import { app, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   AiCreditsError,
   AiTimeoutError,
   defaultAiSettings,
+  generateImageForProvider,
   resolveAiSettings,
   streamForProvider,
   type AiSettings,
@@ -25,13 +26,12 @@ import {
   imageSearch,
   ensureGenofficeLogin,
   gskApiKey,
-  gskGenerateImage,
   gskAnalyzeMedia,
   gskLoginInfo,
   hasGskAuth,
 } from '@genoffice/ai-search'
 import { addPicture } from '@genoffice/pptx-engine'
-import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
+import { EMU_PER_PX_96, type RenderSlide } from '@genoffice/pptx-render'
 import { tm } from './i18n-main'
 import { pushHistory, rebuildSlide, sessions } from './session-state'
 import { AI_SETTINGS_CHANGED_CHANNEL } from '../shared/ipc'
@@ -55,6 +55,48 @@ function writeJson(path: string, value: unknown): void {
 }
 
 const activeAiStreams = new Map<string, AbortController>()
+
+interface InsertImageOperation {
+  slideIndex: number
+  xPx: number
+  yPx: number
+  wPx: number
+  hPx: number
+  fitWidthPx: number
+}
+
+function insertImageBytes(
+  sender: WebContents,
+  op: InsertImageOperation,
+  bytes: Uint8Array,
+  ext: 'png' | 'jpg' | 'gif',
+): { slide: RenderSlide; sourceId: string } | null {
+  const session = sessions.get(sender.id)
+  if (!session) return null
+  const slide = session.opened.deck.slides[op.slideIndex]
+  if (!slide) return null
+  const baseWidthPx = session.opened.deck.size.cx / EMU_PER_PX_96
+  const scale = op.fitWidthPx / baseWidthPx
+  const toEmu = (px: number) => Math.round((px / scale) * EMU_PER_PX_96)
+  pushHistory(session)
+  const element = addPicture(session.opened, slide, {
+    bytes,
+    ext,
+    offset: {
+      x: toEmu(op.xPx),
+      y: toEmu(op.yPx),
+      cx: Math.max(1, toEmu(op.wPx)),
+      cy: Math.max(1, toEmu(op.hPx)),
+    },
+  })
+  if (!element) {
+    session.undoStack.pop()
+    return null
+  }
+  session.fitWidthPx = op.fitWidthPx
+  const rebuilt = rebuildSlide(session, op.slideIndex)
+  return rebuilt ? { slide: rebuilt, sourceId: element.id } : null
+}
 
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
@@ -176,31 +218,51 @@ export function registerAiIpc(): void {
 // never called; docs does not have these channels, so putting them in the wrong place raises
 // "No handler registered".
 export function registerSlidesOnlyAiIpc(): void {
-  // gsk (Genspark CLI) capabilities: AI image generation / media analysis. Returns an error prompt when not logged in.
+  // Generate through the separately configured image endpoint and insert atomically. Codex
+  // OAuth is intentionally unrelated: a ChatGPT subscription does not authorize Images API.
   ipcMain.handle(
     'ai:generate-image',
     async (
-      _event,
+      event,
       op: {
         prompt: string
-        model?: string
-        referenceImageUrls?: string[]
         aspectRatio?: string
-        imageSize?: string
+        slideIndex: number
+        xPx: number
+        yPx: number
+        wPx: number
+        hPx: number
+        fitWidthPx: number
       },
     ) => {
-      if (!hasGskAuth()) return { error: tm('errGskCli') }
       try {
-        const r = await gskGenerateImage({
-          prompt: String(op.prompt),
-          model: op.model ? String(op.model) : undefined,
-          referenceImageUrls: Array.isArray(op.referenceImageUrls)
-            ? op.referenceImageUrls.map(String)
-            : undefined,
+        const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
+        const settings = resolveAiSettings(stored, defaultAiSettings())
+        const generated = await generateImageForProvider(settings.image, {
+          prompt: String(op.prompt ?? ''),
           aspectRatio: op.aspectRatio ? String(op.aspectRatio) : undefined,
-          imageSize: op.imageSize ? String(op.imageSize) : undefined,
         })
-        return { url: r.url }
+        let bytes: Uint8Array
+        let ext: 'png' | 'jpg' | 'gif' = 'png'
+        if (generated.base64) {
+          bytes = new Uint8Array(Buffer.from(generated.base64, 'base64'))
+          if (generated.mimeType?.includes('jpeg')) ext = 'jpg'
+          else if (generated.mimeType?.includes('gif')) ext = 'gif'
+        } else if (generated.url) {
+          const response = await fetchRemoteImage(generated.url)
+          if (!response?.ok) return { error: 'Generated image could not be downloaded' }
+          bytes = new Uint8Array(await response.arrayBuffer())
+          const contentType = response.headers.get('content-type') ?? ''
+          if (contentType.includes('jpeg') || contentType.includes('jpg')) ext = 'jpg'
+          else if (contentType.includes('gif')) ext = 'gif'
+        } else {
+          return { error: 'Image provider returned no image data' }
+        }
+        return (
+          insertImageBytes(event.sender, op, bytes, ext) ?? {
+            error: 'Generated image could not be inserted',
+          }
+        )
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) }
       }
@@ -238,10 +300,6 @@ export function registerSlidesOnlyAiIpc(): void {
         fitWidthPx: number
       },
     ) => {
-      const session = sessions.get(e.sender.id)
-      if (!session) return null
-      const slide = session.opened.deck.slides[op.slideIndex]
-      if (!slide) return null
       try {
         // the URL originates from AI tool calls (prompt-injectable via image
         // search results), so refuse non-http schemes and private/link-local
@@ -249,30 +307,10 @@ export function registerSlidesOnlyAiIpc(): void {
         // fetchRemoteImage adds CDN-friendly headers and transient-error retries.
         const resp = await fetchRemoteImage(String(op.url))
         if (!resp || !resp.ok) return null
-        const buf = Buffer.from(await resp.arrayBuffer())
+        const buf = new Uint8Array(await resp.arrayBuffer())
         const ct = resp.headers.get('content-type') ?? ''
         const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : 'jpg'
-        const baseWidthPx = session.opened.deck.size.cx / EMU_PER_PX_96
-        const scale = op.fitWidthPx / baseWidthPx
-        const toEmu = (px: number) => Math.round((px / scale) * EMU_PER_PX_96)
-        pushHistory(session)
-        const el = addPicture(session.opened, slide, {
-          bytes: new Uint8Array(buf),
-          ext,
-          offset: {
-            x: toEmu(op.xPx),
-            y: toEmu(op.yPx),
-            cx: Math.max(1, toEmu(op.wPx)),
-            cy: Math.max(1, toEmu(op.hPx)),
-          },
-        })
-        if (!el) {
-          session.undoStack.pop()
-          return null
-        }
-        session.fitWidthPx = op.fitWidthPx
-        const rebuilt = rebuildSlide(session, op.slideIndex)
-        return rebuilt ? { slide: rebuilt, sourceId: el.id } : null
+        return insertImageBytes(e.sender, op, buf, ext)
       } catch {
         return null
       }

@@ -336,8 +336,49 @@ const strings = {
 
 const translate = createI18n(strings)
 
-export type AiProviderSettingsTextKey = keyof typeof strings.zh
+const extraStrings = {
+  zh: {
+    provider: '大模型服务',
+    customProvider: 'OpenAI 兼容接口',
+    codexProvider: 'Codex OAuth（ChatGPT 订阅）',
+    codexOAuth: 'Codex 登录',
+    codexChecking: '正在检查登录状态…',
+    codexConnected: '已连接 ChatGPT 订阅',
+    codexDisconnected: '尚未登录',
+    codexLogin: '登录 Codex',
+    codexLogout: '退出登录',
+    imageSection: '图片生成',
+    imageBaseUrl: '图片服务地址',
+    imageModel: '生图模型',
+    imageModelHint: '使用 OpenAI-compatible /images/generations 接口。',
+    imageApiKey: '图片服务 API 密钥（本地服务可不填）',
+  },
+  en: {
+    provider: 'LLM provider',
+    customProvider: 'OpenAI-compatible endpoint',
+    codexProvider: 'Codex OAuth (ChatGPT subscription)',
+    codexOAuth: 'Codex sign-in',
+    codexChecking: 'Checking sign-in status…',
+    codexConnected: 'Connected to ChatGPT subscription',
+    codexDisconnected: 'Not signed in',
+    codexLogin: 'Sign in to Codex',
+    codexLogout: 'Sign out',
+    imageSection: 'Image generation',
+    imageBaseUrl: 'Image service URL',
+    imageModel: 'Image model',
+    imageModelHint: 'Uses an OpenAI-compatible /images/generations endpoint.',
+    imageApiKey: 'Image API key (optional for local servers)',
+  },
+} as const
+
+type BaseKey = keyof typeof strings.zh
+type ExtraKey = keyof typeof extraStrings.zh
+export type AiProviderSettingsTextKey = BaseKey | ExtraKey
 
 export function aiProviderSettingsText(lang: Lang, key: AiProviderSettingsTextKey): string {
-  return translate(lang, key)
+  if (key in extraStrings.zh) {
+    const locale = lang === 'zh' || lang === 'zh-TW' ? extraStrings.zh : extraStrings.en
+    return locale[key as ExtraKey]
+  }
+  return translate(lang, key as BaseKey)
 }

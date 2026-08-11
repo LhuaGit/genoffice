@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
-export type AiProviderId = 'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'custom'
+export type AiProviderId =
+  'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'codex' | 'custom'
 
 /** Genspark account status (gsk login state; the sole auth source for AI features) */
 export interface GenSparkAccountStatus {
@@ -15,6 +16,14 @@ export interface AiProviderConfig {
   baseUrl?: string | undefined
 }
 
+/** OpenAI-compatible image endpoint. Kept separate from the LLM provider because
+ * subscription/OAuth LLM credentials (for example Codex) do not authorize the Images API. */
+export interface AiImageProviderConfig {
+  apiKey: string
+  model: string
+  baseUrl: string
+}
+
 export interface AiProviderMeta {
   id: AiProviderId
   label: string
@@ -27,6 +36,19 @@ export interface AiProviderMeta {
 export interface AiSettings {
   provider: AiProviderId
   providers: Record<AiProviderId, AiProviderConfig>
+  image: AiImageProviderConfig
+}
+
+export interface AiImageGenerationRequest {
+  prompt: string
+  aspectRatio?: string
+  signal?: AbortSignal
+}
+
+export interface AiGeneratedImage {
+  base64?: string
+  url?: string
+  mimeType?: string
 }
 
 /** pre-provider settings shape (single OpenAI-compatible endpoint); migrated into "custom" */

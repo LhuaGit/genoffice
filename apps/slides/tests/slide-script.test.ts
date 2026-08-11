@@ -414,6 +414,83 @@ describe('execute_slide_script tool', () => {
     }
   })
 
+  it('setStyle preserves paragraph identity and excludes rendered bullet glyphs', async () => {
+    const node = slide.nodes[0] as ShapeRenderNode
+    node.text!.lines = [
+      {
+        runs: [
+          {
+            text: '•',
+            x: 0,
+            baselineY: 20,
+            fontFamily: 'Arial',
+            fontSizePx: 24,
+            color: '#000000',
+            bold: false,
+            italic: false,
+            underline: false,
+            widthPx: 12,
+            isBullet: true,
+          },
+          {
+            text: 'Long',
+            x: 24,
+            baselineY: 20,
+            fontFamily: 'Arial',
+            fontSizePx: 24,
+            color: '#000000',
+            bold: false,
+            italic: false,
+            underline: false,
+            widthPx: 48,
+            srcRunIdx: 0,
+          },
+        ],
+        top: 0,
+        height: 28,
+        paraStart: true,
+        level: 0,
+        trailingSpace: true,
+      },
+      {
+        runs: [
+          {
+            text: 'item',
+            x: 24,
+            baselineY: 48,
+            fontFamily: 'Arial',
+            fontSizePx: 24,
+            color: '#000000',
+            bold: false,
+            italic: false,
+            underline: false,
+            widthPx: 48,
+            srcRunIdx: 0,
+          },
+        ],
+        top: 28,
+        height: 28,
+        paraStart: false,
+      },
+    ]
+
+    const skill = createSlidesSkill(access())
+    await skill.executeTool({
+      id: 'bullet-style',
+      name: 'execute_slide_script',
+      input: { slideIndex: 0, code: `setStyle('t1', { bold: true });` },
+    } as any)
+
+    const api = (globalThis as any).window.slidesApi
+    const styleCall = api.editText.mock.calls[0][0]
+    expect(styleCall.paragraphs).toHaveLength(1)
+    expect(styleCall.paragraphs[0]).toMatchObject({ srcPara: 0, level: 0 })
+    expect(styleCall.paragraphs[0].runs).toEqual([
+      expect.objectContaining({ text: 'Long item', srcRun: 0, bold: true }),
+    ])
+    expect(styleCall.paragraphs[0].runs.some((run: { text: string }) => run.text === '•')).toBe(false)
+  })
+
   it('mixed script: layout + text + style + fill + stroke all dispatched in order', async () => {
     const skill = createSlidesSkill(access())
     const r = await skill.executeTool({

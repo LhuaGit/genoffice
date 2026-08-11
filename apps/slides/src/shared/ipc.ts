@@ -9,6 +9,7 @@
  */
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
+import type { LocalSlideSpec } from '@genoffice/pptx-engine'
 import type {
   AiSettings,
   AiStreamChunk,
@@ -1326,14 +1327,23 @@ export interface SlidesApi {
     hPx: number
     fitWidthPx: number
   }) => Promise<{ slide: RenderSlide; sourceId: string } | null>
-  /** gsk (Genspark) AI image generation/editing, returns the image URL (error prompts login when logged out) */
+  /** Generate through the configured image model and insert atomically into the slide. */
   generateImage: (op: {
     prompt: string
-    model?: string
-    referenceImageUrls?: string[]
     aspectRatio?: string
-    imageSize?: string
-  }) => Promise<{ url?: string; error?: string }>
+    slideIndex: number
+    xPx: number
+    yPx: number
+    wPx: number
+    hPx: number
+    fitWidthPx: number
+  }) => Promise<{ slide?: RenderSlide; sourceId?: string; error?: string }>
+  /** Render a model-produced standard page spec to an editable one-slide PPTX locally. */
+  localRenderPage: (op: {
+    spec: LocalSlideSpec
+    width: number
+    height: number
+  }) => Promise<{ ok: boolean; marker?: string; error?: string }>
   /** gsk (Genspark) media analysis: image/audio/video content understanding, returns analysis text */
   analyzeMedia: (op: {
     mediaUrls: string[]

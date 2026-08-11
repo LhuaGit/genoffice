@@ -53,8 +53,8 @@ class FakeResizeObserver {
   }
 }
 
-/** The size fitZoom() sees; fitZoom subtracts 56px (w) / 72px (h) padding. */
-let stageSize = { w: 1336, h: 800 } // avail 1280x728 → fit zoom 1 for the blank 1280x720 deck
+/** The size fitZoom() sees; it reserves the full stage padding plus an 8px safety gutter. */
+let stageSize = { w: 1352, h: 808 } // avail 1280x720 → fit zoom 1 for the blank 1280x720 deck
 
 const blankSlide = () => ({
   widthPx: 1280,
@@ -169,9 +169,9 @@ afterEach(() => {
   FakeResizeObserver.instances.length = 0
 })
 
-/** Mount the App and boot into a blank deck at fit zoom 1 (1336x800 container). */
+/** Mount the App and boot into a blank deck at fit zoom 1 (1352x808 container). */
 async function bootApp(): Promise<HTMLElement> {
-  stageSize = { w: 1336, h: 800 }
+  stageSize = { w: 1352, h: 808 }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -188,7 +188,7 @@ describe('stage fit-to-window follow', () => {
     const wrap = await bootApp()
 
     // sanity: the follow works before any view-mode round trip
-    stageSize = { w: 696, h: 800 } // avail 640 → fit 0.5
+    stageSize = { w: 712, h: 808 } // avail 640 → fit 0.5
     await act(async () => FakeResizeObserver.fire(wrap!))
     expect(stageZoom(container!)).toBeCloseTo(0.5, 5)
 
@@ -205,7 +205,7 @@ describe('stage fit-to-window follow', () => {
     expect(wrap2).not.toBe(wrap)
 
     // shrink again: the observer must follow the NEW stage-wrap
-    stageSize = { w: 376, h: 800 } // avail 320 → fit 0.25
+    stageSize = { w: 392, h: 808 } // avail 320 → fit 0.25
     await act(async () => FakeResizeObserver.fire(wrap2!))
     expect(stageZoom(container!)).toBeCloseTo(0.25, 5)
   })
@@ -220,12 +220,12 @@ describe('stage fit-to-window follow', () => {
     expect(stageZoom(container!)).toBeCloseTo(1.1, 5)
 
     // container shrinks: 1.1 no longer fits → clamp down to the new fit
-    stageSize = { w: 696, h: 800 } // avail 640 → fit 0.5
+    stageSize = { w: 712, h: 808 } // avail 640 → fit 0.5
     await act(async () => FakeResizeObserver.fire(wrap))
     expect(stageZoom(container!)).toBeCloseTo(0.5, 5)
 
     // and fit mode is re-entered: the next resize follows again
-    stageSize = { w: 376, h: 800 } // avail 320 → fit 0.25
+    stageSize = { w: 392, h: 808 } // avail 320 → fit 0.25
     await act(async () => FakeResizeObserver.fire(wrap))
     expect(stageZoom(container!)).toBeCloseTo(0.25, 5)
   })
@@ -264,7 +264,7 @@ describe('stage fit-to-window follow', () => {
     expect(stageZoom(container!)).toBeCloseTo(2.0, 5)
 
     // but a real overflow still clamps back to fit
-    stageSize = { w: 1336, h: 800 } // uncapped fit 1
+    stageSize = { w: 1352, h: 808 } // uncapped fit 1
     await act(async () => FakeResizeObserver.fire(wrap))
     expect(stageZoom(container!)).toBeCloseTo(1, 5)
   })

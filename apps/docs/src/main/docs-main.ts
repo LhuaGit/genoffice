@@ -34,6 +34,7 @@ import {
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
+import { registerPiAgentIpc } from '@genoffice/pi-agent-runtime/main'
 import type {
   IpcMainInvokeEvent,
   MenuItemConstructorOptions,
@@ -3766,6 +3767,7 @@ export function startDocsStandalone(): void {
   })
 
   registerAiIpc()
+  registerPiAgentIpc()
   registerProjectIpc()
   registerDocsIpc()
 

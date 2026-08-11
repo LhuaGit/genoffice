@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
-import { AgentLoop, composeSkills } from '@genoffice/agent-core'
+import { composeSkills } from '@genoffice/agent-core'
+import { PiAgentLoop } from '@genoffice/pi-agent-runtime/renderer'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
@@ -11,12 +12,10 @@ import sendStop from '../assets/send-stop.png'
 import { clearAiHighlights } from '../editor/aiHighlight'
 import { createMarkdownSkill } from './markdown-skill'
 import { createSearchSkill } from './search-skill'
-import { createElectronTransport } from './transport'
 
 const PANEL_WIDTH_KEY = 'markdown-ai-panel-width'
 const PANEL_WIDTH_DEFAULT = 360
 const PANEL_WIDTH_MIN = 280
-const MAX_TURNS = 50
 const MAX_SNAPSHOTS = 20
 const TOOL_OUTPUT_MAX_CHARS = 2000
 
@@ -147,11 +146,10 @@ export function AiPanel({
   }
 
   // The loop is built once; every mutable value goes through a ref getter
-  const loopRef = useRef<AgentLoop<string> | null>(null)
+  const loopRef = useRef<PiAgentLoop<string> | null>(null)
   if (!loopRef.current) {
-    loopRef.current = new AgentLoop<string>({
-      transport: createElectronTransport(() => settingsRef.current!),
-      maxTurns: MAX_TURNS,
+    loopRef.current = new PiAgentLoop<string>({
+      getSettings: () => settingsRef.current!,
       skill: composeSkills('markdown+search', '', [
         createMarkdownSkill(() => depsRef.current.getEditor()),
         createSearchSkill(),

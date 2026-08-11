@@ -7,6 +7,7 @@ import {
   type GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
+import { createPiAgentPreloadBridge } from '@genoffice/pi-agent-runtime/preload'
 import type {
   AttachmentAddResult,
   AttachmentImageResult,
@@ -434,6 +435,7 @@ const projectApi: ProjectApi = {
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)
+contextBridge.exposeInMainWorld('piAgent', createPiAgentPreloadBridge(ipcRenderer))
 
 function parseWorkbookFile(input: unknown): WorkbookFile {
   if (!isRecord(input)) throw new Error('Invalid workbook response.')

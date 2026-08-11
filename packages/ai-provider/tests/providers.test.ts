@@ -10,6 +10,12 @@ describe('defaultAiSettings', () => {
       expect(settings.providers[meta.id].model).toBe(meta.defaultModel)
     }
     expect(settings.providers.custom.baseUrl).toBe('')
+    expect(settings.providers.codex.model).toBe('gpt-5.5')
+    expect(settings.image).toEqual({
+      apiKey: '',
+      model: 'gpt-image-1',
+      baseUrl: 'https://api.openai.com/v1',
+    })
     expect(settings.providers.anthropic.baseUrl).toBeUndefined()
   })
 
@@ -64,5 +70,17 @@ describe('resolveAiSettings', () => {
     })
     // provider not mentioned in stored.providers keeps the computed default
     expect(resolved.providers.anthropic.apiKey).toBe('preset-key')
+  })
+
+  it('merges stored image settings over image defaults', () => {
+    const resolved = resolveAiSettings(
+      { image: { model: 'image-model' } as never },
+      defaultAiSettings(),
+    )
+    expect(resolved.image).toEqual({
+      apiKey: '',
+      model: 'image-model',
+      baseUrl: 'https://api.openai.com/v1',
+    })
   })
 })

@@ -50,7 +50,13 @@ describe('regenerate_slide', () => {
     expect(r.isError).toBeUndefined()
     expect(r.mutated).toBe(true)
     expect(generatePageCloud).toHaveBeenCalledOnce()
-    expect(regenerateSlide).toHaveBeenCalledWith(1, 'cloudpptx:/tmp/p.pptx')
+    expect(regenerateSlide).toHaveBeenCalledWith(
+      1,
+      'cloudpptx:/tmp/p.pptx',
+      expect.objectContaining({
+        brief: 'Redo as three-column cards, keep the title "NEW"',
+      }),
+    )
     expect(r.output).toContain('page 2')
   })
 

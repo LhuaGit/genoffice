@@ -78,6 +78,13 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'codex',
+    label: 'Codex OAuth',
+    models: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2-codex'],
+    defaultModel: 'gpt-5.5',
+    keyPlaceholder: 'Sign in with ChatGPT',
+  },
+  {
     id: 'custom',
     label: 'Custom',
     models: [],
@@ -106,7 +113,15 @@ export function defaultAiSettings(
   }
   // A local/custom endpoint is the privacy-preserving default. Genspark remains
   // available as an explicit provider, but no account is required to configure AI.
-  return { provider: 'custom', providers }
+  return {
+    provider: 'custom',
+    providers,
+    image: {
+      apiKey: '',
+      model: 'gpt-image-1',
+      baseUrl: 'https://api.openai.com/v1',
+    },
+  }
 }
 
 /**
@@ -119,6 +134,7 @@ export function resolveAiSettings(
   stored: Partial<AiSettings> & LegacyAiSettings,
   defaults: AiSettings,
 ): AiSettings {
+  const image = { ...defaults.image, ...(stored.image ?? {}) }
   if (!stored.providers) {
     if (stored.apiKey) {
       defaults.providers.custom = {
@@ -127,10 +143,11 @@ export function resolveAiSettings(
         baseUrl: stored.baseUrl ?? 'https://api.openai.com/v1',
       }
     }
-    return defaults
+    return { ...defaults, image }
   }
   return {
     provider: stored.provider ?? defaults.provider,
     providers: { ...defaults.providers, ...stored.providers },
+    image,
   }
 }

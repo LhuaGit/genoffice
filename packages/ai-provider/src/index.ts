@@ -2,6 +2,9 @@ export type {
   AiChatRequest,
   AiChatResponse,
   AiProviderConfig,
+  AiImageProviderConfig,
+  AiImageGenerationRequest,
+  AiGeneratedImage,
   AiProviderId,
   AiProviderMeta,
   AiSettings,
@@ -14,8 +17,10 @@ export {
   AI_PROVIDERS,
   GENSPARK_LLM_BASE_URLS,
   defaultAiSettings,
+  gensparkAttributionHeaders,
   resolveAiSettings,
 } from './providers'
+export { generateImageForProvider } from './image'
 export { chatForProvider } from './chat'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'

@@ -13,6 +13,7 @@ const settings: AiSettings = {
   providers: Object.fromEntries(
     AI_PROVIDERS.map((p) => [p.id, { apiKey: '', model: p.defaultModel }]),
   ) as AiSettings['providers'],
+  image: { apiKey: '', model: 'gpt-image-1', baseUrl: 'https://api.openai.com/v1' },
 }
 
 function createEditor(): Editor {
@@ -139,11 +140,15 @@ describe('AiPanel collapse', () => {
     expect(settingsButton).not.toBeNull()
     act(() => settingsButton!.click())
 
-    const inputs = container.querySelectorAll<HTMLInputElement>('[role="dialog"] input')
-    expect(inputs).toHaveLength(3)
-    typeIntoInput(inputs[0]!, 'http://localhost:11434/v1///')
-    typeIntoInput(inputs[1]!, 'llama3.1')
-    typeIntoInput(inputs[2]!, '')
+    const baseUrl = container.querySelector<HTMLInputElement>('#custom-ai-provider-base-url')
+    const model = container.querySelector<HTMLInputElement>('#custom-ai-provider-model')
+    const apiKey = container.querySelector<HTMLInputElement>('#custom-ai-provider-api-key')
+    expect(baseUrl).not.toBeNull()
+    expect(model).not.toBeNull()
+    expect(apiKey).not.toBeNull()
+    typeIntoInput(baseUrl!, 'http://localhost:11434/v1///')
+    typeIntoInput(model!, 'llama3.1')
+    typeIntoInput(apiKey!, '')
     const form = container.querySelector<HTMLFormElement>('[role="dialog"] form')
     expect(form).not.toBeNull()
     act(() => form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))

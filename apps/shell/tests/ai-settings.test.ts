@@ -57,6 +57,9 @@ describe('AiProviderSettingsForm', () => {
       'http://localhost:11434/v1',
       'local-model',
       'local-key',
+      'https://api.openai.com/v1',
+      'gpt-image-1',
+      '',
     ])
   })
 
@@ -64,11 +67,9 @@ describe('AiProviderSettingsForm', () => {
     const settings = customSettings()
     const onChange = vi.fn<(next: AiSettings) => void>()
     const inputs = renderForm(settings, { onChange }).filter((element) => element.type === 'input')
-    const baseUrlInput = inputs.find((input) => input.props.type === 'url')
-    const modelInput = inputs.find(
-      (input) => input.props.type !== 'url' && input.props.type !== 'password',
-    )
-    const apiKeyInput = inputs.find((input) => input.props.type === 'password')
+    const baseUrlInput = inputs.find((input) => input.props.id === 'shell-ai-test-base-url')
+    const modelInput = inputs.find((input) => input.props.id === 'shell-ai-test-model')
+    const apiKeyInput = inputs.find((input) => input.props.id === 'shell-ai-test-api-key')
 
     expect(baseUrlInput).toBeDefined()
     expect(modelInput).toBeDefined()
@@ -125,7 +126,25 @@ describe('AiProviderSettingsForm', () => {
           baseUrl: 'http://localhost:11434/v1',
         },
       },
+      image: {
+        apiKey: '',
+        model: 'gpt-image-1',
+        baseUrl: 'https://api.openai.com/v1',
+      },
     })
+  })
+
+  it('offers Codex OAuth as a Pi-native LLM provider', () => {
+    const settings = customSettings()
+    settings.provider = 'codex'
+    const elements = renderForm(settings)
+    const select = elements.find((element) => element.type === 'select')
+    const codexModel = elements.find(
+      (element) => element.type === 'input' && element.props.id === 'shell-ai-test-codex-model',
+    )
+
+    expect(select?.props.value).toBe('codex')
+    expect(codexModel?.props.value).toBe('gpt-5.5')
   })
 
   it('delegates cancel without submitting', () => {

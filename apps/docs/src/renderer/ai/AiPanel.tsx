@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
-import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
+import { composeSkills, type AgentImage } from '@genoffice/agent-core'
+import { PiAgentLoop } from '@genoffice/pi-agent-runtime/renderer'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
@@ -9,9 +10,8 @@ import { findNumId, type NumIds } from './protocol'
 import { markDocSeen } from './tools'
 import { createDocsSkill } from './docs-skill'
 import { applyRevisionsBy } from '../editor/revisions'
-import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
+import { DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
-import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import {
   AiComposer,
@@ -109,7 +109,7 @@ function clampPanelWidth(w: number): number {
 }
 
 function loadPanelWidth(): number {
-  const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
+  const saved = Number(window.localStorage.getItem(PANEL_WIDTH_KEY))
   return Number.isFinite(saved) && saved > 0 ? clampPanelWidth(saved) : PANEL_WIDTH_DEFAULT
 }
 
@@ -251,7 +251,7 @@ export function AiPanel({
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [trackChanges, setTrackChanges] = useState(
-    () => localStorage.getItem(TRACK_CHANGES_KEY) === '1',
+    () => window.localStorage.getItem(TRACK_CHANGES_KEY) === '1',
   )
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([])
@@ -466,16 +466,15 @@ export function AiPanel({
     })
   }
 
-  const loopRef = useRef<AgentLoop<PmNode> | null>(null)
+  const loopRef = useRef<PiAgentLoop<PmNode> | null>(null)
   if (!loopRef.current) {
     const numIds = (): NumIds => ({
       bullet: findNumId(blocksRef.current, 'bullet') ?? numIdFallbackRef.current?.bullet ?? null,
       ordered: findNumId(blocksRef.current, 'ordered') ?? numIdFallbackRef.current?.ordered ?? null,
     })
-    loopRef.current = new AgentLoop<PmNode>({
-      transport: createElectronTransport(() => settingsRef.current),
+    loopRef.current = new PiAgentLoop<PmNode>({
+      getSettings: () => settingsRef.current,
       systemSuffix: aiLangDirective,
-      maxTurns: DOCS_AGENT_MAX_TURNS,
       skill: composeSkills('docs+files', '', [
         createDocsSkill(
           () => editorRef.current,
@@ -775,7 +774,7 @@ export function AiPanel({
   const toggleTrackChanges = () => {
     const next = !trackChanges
     setTrackChanges(next)
-    localStorage.setItem(TRACK_CHANGES_KEY, next ? '1' : '0')
+    window.localStorage.setItem(TRACK_CHANGES_KEY, next ? '1' : '0')
     // switching off keeps nothing pending: accept whatever is still highlighted
     if (!next) acceptChanges()
   }
@@ -811,7 +810,7 @@ export function AiPanel({
       document.body.style.userSelect = ''
       setResizing(false)
       setPanelWidth((w) => {
-        localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(w)))
+        window.localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(w)))
         return w
       })
     }

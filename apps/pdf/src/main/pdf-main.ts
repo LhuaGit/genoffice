@@ -25,6 +25,7 @@ import type {
 } from '../shared/ipc'
 import { extractPagesBytes, insertPdfBytes, savePdfToPath } from './save-pdf'
 import { registerStandalonePdfAiIpc } from './ai-ipc'
+import { registerPiAgentIpc } from '@genoffice/pi-agent-runtime/main'
 
 const tDlg = createI18n({
   zh: {
@@ -534,7 +535,10 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
 }
 
 export function createPdfView(openPath?: string | null): WebContentsView {
-  if (runtime.includeAiHandlers ?? true) registerStandalonePdfAiIpc()
+  if (runtime.includeAiHandlers ?? true) {
+    registerStandalonePdfAiIpc()
+    registerPiAgentIpc()
+  }
   registerPdfIpc()
   const view = new WebContentsView({
     webPreferences: {
@@ -561,6 +565,7 @@ export function startPdfStandalone(): void {
   })
   void app.whenReady().then(() => {
     registerStandalonePdfAiIpc()
+    registerPiAgentIpc()
     registerPdfIpc()
     const win = new BrowserWindow({
       width: 1200,

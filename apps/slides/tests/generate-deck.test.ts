@@ -4,8 +4,9 @@
  * calling the LLM to write HTML and landing it. Page count is guaranteed by the for loop -> cures
  * "planned N pages but only 1 remains" for good.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createSlidesSkill, type DeckAccess } from '../src/renderer/ai/slides-skill'
+import type { SlideGenerationContext } from '../src/renderer/ai/slide-page-generator'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AgentToolCall } from '../src/shared/ipc'
 
@@ -27,6 +28,7 @@ function makeAccess(opts?: {
   const landOrder: string[] = [] // records the landing order
   const imageSearchCalls: string[] = [] // records the queries searchImages was called with
   const imagesSeen: string[][] = [] // records the images each generatePageCloud call received
+  const qcContextsSeen: SlideGenerationContext[] = [] // semantic intent retained for screenshot QC
   const sidecarSaves: Array<{ topic: string; styleSkill: string; createdAt: string }> = []
   const savedTemplates: Record<
     string,
@@ -46,7 +48,14 @@ function makeAccess(opts?: {
     applyDeck: () => {},
     fitWidthPx: 1280,
     retryBackoffMs: 0,
-    generateFromHtml: async (html, mode = 'replace', _deckName?: string, insertAt?: number) => {
+    generateFromHtml: async (
+      html,
+      mode = 'replace',
+      _deckName?: string,
+      insertAt?: number,
+      qcContexts?: SlideGenerationContext[],
+    ) => {
+      qcContextsSeen.push(...(qcContexts ?? []))
       const failNo = [...landFailOnce].find((n) => html[0]?.includes(`PAGE${n}:`))
       if (failNo !== undefined) {
         landFailOnce.delete(failNo)
@@ -134,6 +143,7 @@ function makeAccess(opts?: {
     landOrder,
     imageSearchCalls,
     imagesSeen,
+    qcContextsSeen,
     sidecarSaves,
     savedTemplates,
     getPages: () => pages,
@@ -157,6 +167,29 @@ const deckCall = (n: number, insertMode?: 'replace' | 'append'): AgentToolCall =
 })
 
 describe('generate_deck self-driven page-by-page generation', () => {
+  it('prefers the standard local page generator without checking Genspark', async () => {
+    const { access, getPages } = makeAccess()
+    const cloudStatus = vi.fn(async () => false)
+    const localGenerate = vi.fn(async (args: { pageIndex: number; title: string }) => ({
+      ok: true,
+      page: `<!doctype html><html><body>LOCAL${args.pageIndex}:${args.title}</body></html>`,
+    }))
+    access.isCloudPageGenEnabled = cloudStatus
+    access.pageGenerator = {
+      mode: 'local',
+      isAvailable: async () => true,
+      generate: localGenerate as never,
+    }
+    const skill = createSlidesSkill(access)
+
+    const result = (await skill.executeTool(deckCall(2))) as { output: string }
+
+    expect(getPages()).toBe(2)
+    expect(localGenerate).toHaveBeenCalledTimes(2)
+    expect(cloudStatus).not.toHaveBeenCalled()
+    expect(result.output).toContain('local pages rendered')
+  })
+
   it('plans 5 pages → tool loop calls the LLM 5 times to write pages → lands 5 pages → progress complete', async () => {
     const { access, genPageCalls, getPages } = makeAccess()
     const skill = createSlidesSkill(access)
@@ -177,7 +210,7 @@ describe('generate_deck self-driven page-by-page generation', () => {
   })
 
   it('landing order strictly follows page order (first page replace, rest append, no mutual overwrites)', async () => {
-    const { access, landOrder } = makeAccess()
+    const { access, landOrder, qcContextsSeen } = makeAccess()
     const skill = createSlidesSkill(access)
     await skill.executeTool(deckCall(3))
     // First page replace, next two append, and content is in PAGE1/2/3 order
@@ -185,6 +218,11 @@ describe('generate_deck self-driven page-by-page generation', () => {
     expect(landOrder[1]).toContain('append:')
     expect(landOrder[1]).toContain('PAGE2')
     expect(landOrder[2]).toContain('PAGE3')
+    expect(qcContextsSeen).toEqual([
+      expect.objectContaining({ title: 'Page 1 Title', brief: 'brief1', layout: 'data' }),
+      expect.objectContaining({ title: 'Page 2 Title', brief: 'brief2', layout: 'data' }),
+      expect.objectContaining({ title: 'Page 3 Title', brief: 'brief3', layout: 'data' }),
+    ])
   })
 
   it('LLM fails on one page → other pages land + tool result names the failed page to prompt a fix', async () => {

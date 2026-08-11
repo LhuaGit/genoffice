@@ -74,6 +74,10 @@ const config = {
   // never leave a stale hard-coded pin behind (packaging would silently ship
   // the old runtime).
   electronVersion: require('electron/package.json').version,
+  // Reuse the Electron runtime installed by the workspace postinstall. This
+  // keeps local macOS packaging deterministic and avoids a second GitHub
+  // download after `install-electron` has already populated this directory.
+  electronDist: join(__dirname, '../../node_modules/electron/dist'),
   directories: {
     output: 'release',
   },

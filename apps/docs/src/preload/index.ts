@@ -10,6 +10,7 @@ import type {
 } from '../shared/ipc'
 import { AI_SETTINGS_CHANGED_CHANNEL } from '../shared/ipc'
 import type { ProjectApi } from '@genoffice/project-store'
+import { createPiAgentPreloadBridge } from '@genoffice/pi-agent-runtime/preload'
 
 const api: DesktopApi = {
   getLanguage: () => ipcRenderer.invoke('app:get-language'),
@@ -137,3 +138,4 @@ const projectApi: ProjectApi = {
 
 contextBridge.exposeInMainWorld('desktop', api)
 contextBridge.exposeInMainWorld('projectApi', projectApi)
+contextBridge.exposeInMainWorld('piAgent', createPiAgentPreloadBridge(ipcRenderer))

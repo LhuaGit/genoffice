@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { AiSettings } from '@genoffice/ai-provider'
+import { createPiAgentPreloadBridge } from '@genoffice/pi-agent-runtime/preload'
 import type {
   AccountLoginEvent,
   AccountStatus,
@@ -200,6 +201,8 @@ const homeApi: HomeApi = {
     await ipcRenderer.invoke(HOME_CHANNELS.openCloudProject, projectUrl)
   },
 }
+
+contextBridge.exposeInMainWorld('piAgent', createPiAgentPreloadBridge(ipcRenderer))
 
 function asCloudProjectsSnapshot(result: unknown): CloudProjectsSnapshot | null {
   if (

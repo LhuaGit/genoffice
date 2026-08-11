@@ -155,7 +155,7 @@ export function auditSlideLayout(slide: RenderSlide): string[] {
 /** Format the audit result as trailing text for a tool's return value. */
 export function formatAudit(issues: string[], round?: string): string {
   if (issues.length === 0)
-    return '\n<layout-audit>✅ Passed: no overlap/out-of-bounds/text overflow.</layout-audit>'
+    return '\n<layout-audit>✅ Passed: no layout or paragraph-format issues.</layout-audit>'
   const head = `\n<layout-audit>⚠️ Found ${issues.length} issue(s):\n`
   const body = issues.map((s) => `- ${s}`).join('\n')
   const tail = round

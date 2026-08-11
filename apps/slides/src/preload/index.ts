@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { ProjectApi } from '@genoffice/project-store'
+import { createPiAgentPreloadBridge } from '@genoffice/pi-agent-runtime/preload'
 import { AI_SETTINGS_CHANGED_CHANNEL } from '../shared/ipc'
 import type {
   AddChartOp,
@@ -290,11 +291,15 @@ const api: SlidesApi = {
   }) => ipcRenderer.invoke('ai:insert-image-url', op),
   generateImage: (op: {
     prompt: string
-    model?: string
-    referenceImageUrls?: string[]
     aspectRatio?: string
-    imageSize?: string
+    slideIndex: number
+    xPx: number
+    yPx: number
+    wPx: number
+    hPx: number
+    fitWidthPx: number
   }) => ipcRenderer.invoke('ai:generate-image', op),
+  localRenderPage: (op) => ipcRenderer.invoke('slides:local-page-render', op),
   analyzeMedia: (op: { mediaUrls: string[]; requirements: string }) =>
     ipcRenderer.invoke('ai:analyze-media', op),
   gskStatus: () => ipcRenderer.invoke('ai:gsk-status'),
@@ -365,3 +370,4 @@ const projectApi: ProjectApi = {
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)
+contextBridge.exposeInMainWorld('piAgent', createPiAgentPreloadBridge(ipcRenderer))

@@ -65,6 +65,7 @@ import {
 import { moveSlide } from './sections'
 
 export * from './types'
+export * from './local-slide-generator'
 export {
   animClassOf,
   buildTimingXml,

@@ -13,6 +13,7 @@ export default defineConfig({
           '@genoffice/ai-provider',
           '@genoffice/agent-core',
           '@genoffice/ai-search',
+          '@genoffice/pi-agent-runtime',
           '@genoffice/docx-engine',
           '@genoffice/file-parse',
           '@genoffice/electron-utils',
@@ -22,8 +23,8 @@ export default defineConfig({
     ],
   },
   preload: {
-    // Sandboxed preload scripts cannot require arbitrary npm packages at runtime.
-    plugins: [],
+    // Sandboxed preload scripts cannot resolve workspace TS packages at runtime.
+    plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/pi-agent-runtime'] })],
   },
   renderer: {
     plugins: [react()],
