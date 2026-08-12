@@ -1,18 +1,36 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle, Sparkle, WarningCircle } from '@phosphor-icons/react'
-import { defaultAiSettings, type AiSettings } from '@genoffice/ai-provider'
-import { AiProviderSettingsForm, aiProviderSettingsText } from '@genoffice/ui'
-import { useI18n } from './locale'
+/*
+ * Provider settings page ported from Cherry Studio's ProviderSettingsPage.
+ * Source: src/renderer/pages/settings/ProviderSettings/ProviderSettingsPage.tsx
+ * License: GNU AGPL-3.0
+ */
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  AI_PROVIDERS,
+  defaultAiSettings,
+  type AiProviderConfig,
+  type AiModelListRequest,
+  type AiModelListResult,
+  type AiProviderMeta,
+  type AiSettings,
+} from '@genoffice/ai-provider'
+import { CustomProviderDrawer } from './settings/CustomProviderDrawer'
+import { ProviderList } from './settings/ProviderList'
+import { ProviderSetting } from './settings/ProviderSetting'
+import type { ProviderListEntry, ProviderViewId, VisibleProviderId } from './settings/types'
 import './settings.css'
 
-function sameSettings(left: AiSettings | null, right: AiSettings | null): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
+const VISIBLE_PROVIDERS = AI_PROVIDERS.filter(
+  (provider): provider is AiProviderMeta & { id: VisibleProviderId } => provider.id !== 'codex',
+)
+
+function initialSelection(settings: AiSettings): ProviderViewId {
+  return settings.provider === 'codex' ? 'custom' : settings.provider
 }
 
 export function Settings() {
-  const { lang, t } = useI18n()
-  const [savedSettings, setSavedSettings] = useState<AiSettings | null>(null)
-  const [draft, setDraft] = useState<AiSettings | null>(null)
+  const [settings, setSettings] = useState<AiSettings | null>(null)
+  const [selectedProviderId, setSelectedProviderId] = useState<ProviderViewId>('custom')
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -20,16 +38,16 @@ export function Settings() {
     let active = true
     void window.aiOffice
       .getAiSettings()
-      .then((settings) => {
+      .then((loaded) => {
         if (!active) return
-        setSavedSettings(settings)
-        setDraft(settings)
+        setSettings(loaded)
+        setSelectedProviderId(initialSelection(loaded))
       })
       .catch((cause: unknown) => {
         if (!active) return
         const fallback = defaultAiSettings()
-        setSavedSettings(fallback)
-        setDraft(fallback)
+        setSettings(fallback)
+        setSelectedProviderId(initialSelection(fallback))
         setError(cause instanceof Error ? cause.message : String(cause))
       })
     return () => {
@@ -39,23 +57,19 @@ export function Settings() {
 
   useEffect(
     () =>
-      window.aiOffice.onAiSettingsChanged((settings) => {
-        setSavedSettings(settings)
-        setDraft(settings)
+      window.aiOffice.onAiSettingsChanged((next) => {
+        setSettings(next)
         setError('')
       }),
     [],
   )
 
-  const dirty = !sameSettings(draft, savedSettings)
-
-  const save = async (settings: AiSettings): Promise<void> => {
+  const save = async (next: AiSettings): Promise<void> => {
+    setSettings(next)
     setSaving(true)
     setError('')
     try {
-      await window.aiOffice.setAiSettings(settings)
-      setSavedSettings(settings)
-      setDraft(settings)
+      await window.aiOffice.setAiSettings(next)
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -63,68 +77,93 @@ export function Settings() {
     }
   }
 
+  const listModels = useCallback(
+    (request: AiModelListRequest): Promise<AiModelListResult> =>
+      window.aiOffice.listAiModels(request),
+    [],
+  )
+
+  const entries = useMemo<ProviderListEntry[]>(() => {
+    if (!settings) return []
+    const textProviders = VISIBLE_PROVIDERS.map((meta) => {
+      const config = settings.providers[meta.id]
+      return {
+        id: meta.id,
+        label: meta.label,
+        meta,
+        model: config.model,
+        active: settings.provider === meta.id,
+        configured:
+          meta.id === 'genspark' ||
+          Boolean(config.apiKey) ||
+          Boolean(config.baseUrl && config.model),
+      }
+    })
+    return [
+      ...textProviders,
+      {
+        id: 'image' as const,
+        label: '图片生成',
+        model: settings.image.model,
+        active: false,
+        configured: Boolean(settings.image.baseUrl && settings.image.model),
+      },
+    ]
+  }, [settings])
+
+  const selectedMeta =
+    selectedProviderId === 'image'
+      ? undefined
+      : VISIBLE_PROVIDERS.find((provider) => provider.id === selectedProviderId)
+
+  const saveCustomProvider = (config: AiProviderConfig): void => {
+    if (!settings) return
+    const next: AiSettings = {
+      ...settings,
+      provider: 'custom',
+      providers: { ...settings.providers, custom: config },
+    }
+    setSelectedProviderId('custom')
+    void save(next).then(() => setDrawerOpen(false))
+  }
+
+  if (!settings) {
+    return (
+      <main className="cherry-provider-page loading" aria-label="Provider 设置">
+        <span />
+        <span />
+        <span />
+      </main>
+    )
+  }
+
   return (
-    <main className="settings-page">
-      <header className="settings-page-header">
-        <h1>{t('navSettings')}</h1>
-      </header>
-
-      <div className="settings-layout">
-        <nav className="settings-rail" aria-label={t('navSettings')}>
-          <button className="settings-rail-item active" aria-current="page">
-            <Sparkle size={19} weight="duotone" aria-hidden="true" />
-            <span>{aiProviderSettingsText(lang, 'serviceTitle')}</span>
-          </button>
-          <div className="settings-rail-meta" aria-hidden="true">
-            <span className="settings-provider-dot" />
-            OpenAI API
-          </div>
-        </nav>
-
-        <section className="settings-detail" aria-labelledby="ai-service-title">
-          <div className="settings-detail-header">
-            <div>
-              <span className="settings-eyebrow">OpenAI API</span>
-              <h2 id="ai-service-title">{aiProviderSettingsText(lang, 'serviceTitle')}</h2>
-              <p>{aiProviderSettingsText(lang, 'description')}</p>
-            </div>
-            {!dirty && !saving && !error && draft && (
-              <span className="settings-status saved" role="status">
-                <CheckCircle size={18} weight="fill" aria-hidden="true" />
-                {aiProviderSettingsText(lang, 'saved')}
-              </span>
-            )}
-            {error && (
-              <span className="settings-status error" role="alert" title={error}>
-                <WarningCircle size={18} weight="fill" aria-hidden="true" />
-                {error}
-              </span>
-            )}
-          </div>
-
-          {draft ? (
-            <AiProviderSettingsForm
-              variant="page"
-              idPrefix="shell-ai-provider"
-              lang={lang}
-              settings={draft}
-              submitting={saving}
-              onChange={setDraft}
-              onCancel={() => {
-                if (savedSettings) setDraft(savedSettings)
-                setError('')
-              }}
-              onSubmit={(settings) => void save(settings)}
-            />
-          ) : (
-            <div className="settings-loading" aria-label={aiProviderSettingsText(lang, 'title')}>
-              <span />
-              <span />
-              <span />
-            </div>
-          )}
-        </section>
-      </div>
+    <main className="cherry-provider-page">
+      <ProviderList
+        entries={entries}
+        selectedProviderId={selectedProviderId}
+        onSelectProvider={setSelectedProviderId}
+        onAddProvider={() => setDrawerOpen(true)}
+      />
+      <ProviderSetting
+        key={selectedProviderId}
+        providerId={selectedProviderId}
+        meta={selectedMeta}
+        settings={settings}
+        saving={saving}
+        error={error}
+        onChange={setSettings}
+        onSave={save}
+        onListModels={listModels}
+        onEditCustom={() => setDrawerOpen(true)}
+      />
+      <CustomProviderDrawer
+        open={drawerOpen}
+        initial={settings.providers.custom}
+        saving={saving}
+        onClose={() => setDrawerOpen(false)}
+        onSubmit={saveCustomProvider}
+      />
     </main>
   )
 }

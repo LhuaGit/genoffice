@@ -10,10 +10,10 @@ describe('defaultAiSettings', () => {
       expect(settings.providers[meta.id].model).toBe(meta.defaultModel)
     }
     expect(settings.providers.custom.baseUrl).toBe('')
-    expect(settings.providers.codex.model).toBe('gpt-5.5')
+    expect(settings.providers.codex.model).toBe('')
     expect(settings.image).toEqual({
       apiKey: '',
-      model: 'gpt-image-1',
+      model: '',
       baseUrl: 'https://api.openai.com/v1',
     })
     expect(settings.providers.anthropic.baseUrl).toBeUndefined()

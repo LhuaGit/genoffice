@@ -21,6 +21,12 @@ export {
   resolveAiSettings,
 } from './providers'
 export { generateImageForProvider } from './image'
+export { listProviderModels } from './model-discovery'
+export type {
+  AiModelDiscoveryProviderId,
+  AiModelListRequest,
+  AiModelListResult,
+} from './model-discovery'
 export { chatForProvider } from './chat'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'

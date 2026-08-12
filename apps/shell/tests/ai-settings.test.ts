@@ -35,6 +35,7 @@ function renderForm(
     onSubmit?: (next: AiSettings) => void
     onCancel?: () => void
   } = {},
+  section: 'all' | 'custom' | 'image' = 'all',
 ): Array<ReactElement<ElementProps>> {
   return elementsIn(
     AiProviderSettingsForm({
@@ -44,6 +45,7 @@ function renderForm(
       onSubmit: callbacks.onSubmit ?? (() => {}),
       onCancel: callbacks.onCancel,
       idPrefix: 'shell-ai-test',
+      section,
     }),
   )
 }
@@ -58,7 +60,7 @@ describe('AiProviderSettingsForm', () => {
       'local-model',
       'local-key',
       'https://api.openai.com/v1',
-      'gpt-image-1',
+      '',
       '',
     ])
   })
@@ -128,23 +130,57 @@ describe('AiProviderSettingsForm', () => {
       },
       image: {
         apiKey: '',
-        model: 'gpt-image-1',
+        model: '',
         baseUrl: 'https://api.openai.com/v1',
       },
     })
   })
 
-  it('offers Codex OAuth as a Pi-native LLM provider', () => {
+  it('does not expose Codex OAuth while preserving stored compatibility', () => {
     const settings = customSettings()
     settings.provider = 'codex'
-    const elements = renderForm(settings)
+    const onSubmit = vi.fn<(next: AiSettings) => void>()
+    const elements = renderForm(settings, { onSubmit })
     const select = elements.find((element) => element.type === 'select')
     const codexModel = elements.find(
       (element) => element.type === 'input' && element.props.id === 'shell-ai-test-codex-model',
     )
+    const form = elements.find((element) => element.type === 'form')
+    const submit = form?.props.onSubmit as
+      ((event: { preventDefault: () => void }) => void) | undefined
 
-    expect(select?.props.value).toBe('codex')
-    expect(codexModel?.props.value).toBe('gpt-5.5')
+    expect(select).toBeUndefined()
+    expect(codexModel).toBeUndefined()
+    submit?.({ preventDefault: () => {} })
+    expect(onSubmit.mock.calls[0]?.[0].provider).toBe('codex')
+  })
+
+  it('renders one provider section for the Cherry-style settings detail', () => {
+    const settings = customSettings()
+    const customElements = renderForm(settings, {}, 'custom')
+    const imageElements = renderForm(settings, {}, 'image')
+
+    expect(customElements.some((element) => element.type === 'select')).toBe(false)
+    expect(
+      customElements.some(
+        (element) => element.type === 'input' && element.props.id === 'shell-ai-test-model',
+      ),
+    ).toBe(true)
+    expect(
+      customElements.some(
+        (element) => element.type === 'input' && element.props.id === 'shell-ai-test-image-model',
+      ),
+    ).toBe(false)
+    expect(
+      imageElements.some(
+        (element) => element.type === 'input' && element.props.id === 'shell-ai-test-image-model',
+      ),
+    ).toBe(true)
+    expect(
+      imageElements.some(
+        (element) => element.type === 'input' && element.props.id === 'shell-ai-test-model',
+      ),
+    ).toBe(false)
   })
 
   it('delegates cancel without submitting', () => {
@@ -177,22 +213,37 @@ describe('Shell AI settings wiring', () => {
 
     expect(shared).toMatch(/getAiSettings\(\): Promise<AiSettings>/)
     expect(shared).toMatch(/setAiSettings\(settings: AiSettings\): Promise<void>/)
+    expect(shared).toMatch(/listAiModels\(request: AiModelListRequest\): Promise<AiModelListResult>/)
     expect(shared).toContain("getAiSettings: 'ai:get-settings'")
     expect(shared).toContain("setAiSettings: 'ai:set-settings'")
+    expect(shared).toContain("listAiModels: 'ai:list-models'")
     expect(preload).toMatch(/ipcRenderer\.invoke\(HOME_CHANNELS\.getAiSettings\)/)
     expect(preload).toMatch(/ipcRenderer\.invoke\(HOME_CHANNELS\.setAiSettings, settings\)/)
+    expect(preload).toMatch(/ipcRenderer\.invoke\(HOME_CHANNELS\.listAiModels, request\)/)
+    expect(main).toMatch(/ipcMain\.handle\(\s*HOME_CHANNELS\.listAiModels/)
     expect(main).toMatch(/\bregisterAiIpc\(\)/)
   })
 
   it('keeps the settings page connected to the shared form and persistence API', () => {
     const settingsPage = source('../src/renderer/src/Settings.tsx')
+    const providerList = source('../src/renderer/src/settings/ProviderList.tsx')
+    const providerSetting = source('../src/renderer/src/settings/ProviderSetting.tsx')
     const home = source('../src/renderer/src/Home.tsx')
 
-    expect(settingsPage).toContain('AiProviderSettingsForm')
+    expect(settingsPage).toContain('ProviderList')
+    expect(settingsPage).toContain('ProviderSetting')
+    expect(settingsPage).toContain('CustomProviderDrawer')
+    expect(settingsPage).toContain("provider.id !== 'codex'")
     expect(settingsPage).toMatch(/window\.aiOffice\s*\.getAiSettings\(\)/)
     expect(settingsPage).toMatch(/window\.aiOffice\s*\.setAiSettings\(/)
-    expect(settingsPage).toMatch(/onCancel=/)
+    expect(providerList).toContain('Adapted from Cherry Studio ProviderList')
+    expect(providerSetting).toContain('Adapted from Cherry Studio ProviderSetting')
+    expect(providerSetting).toContain('onListModels')
+    expect(providerSetting).toContain('自定义模型 ID')
     expect(home).toMatch(/<Settings\b/)
+    expect(home).toContain('onOpenSettings')
+    expect(home).toContain('settings-menu-row')
+    expect(home).not.toContain('className="settings-nav"')
   })
 
   it('propagates saved settings to already-open editor views', () => {

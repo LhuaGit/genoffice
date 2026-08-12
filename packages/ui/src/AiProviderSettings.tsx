@@ -14,19 +14,7 @@ export interface CustomAiProviderSettings {
 }
 
 type CustomAiProviderConfig = CustomAiProviderSettings['providers']['custom']
-type CodexAiProviderConfig = CustomAiProviderSettings['providers']['codex']
 type ImageProviderConfig = CustomAiProviderSettings['image']
-
-export interface CodexOAuthBridge {
-  codexAuthStatus(): Promise<{ loggedIn: boolean }>
-  codexLogin(): Promise<{ loggedIn: boolean }>
-  codexLogout(): Promise<{ loggedIn: boolean }>
-}
-
-function globalOAuthBridge(): CodexOAuthBridge | undefined {
-  if (typeof globalThis === 'undefined') return undefined
-  return (globalThis as typeof globalThis & { piAgent?: CodexOAuthBridge }).piAgent
-}
 
 export interface AiProviderSettingsFormProps<T extends CustomAiProviderSettings> {
   lang: Lang
@@ -37,7 +25,7 @@ export interface AiProviderSettingsFormProps<T extends CustomAiProviderSettings>
   submitting?: boolean
   idPrefix?: string
   variant?: 'page' | 'dialog'
-  oauthBridge?: CodexOAuthBridge
+  section?: 'all' | 'custom' | 'image'
 }
 
 function withCustomSettings<T extends CustomAiProviderSettings>(
@@ -53,16 +41,6 @@ function withCustomSettings<T extends CustomAiProviderSettings>(
   } as T
 }
 
-function withCodexSettings<T extends CustomAiProviderSettings>(
-  settings: T,
-  codex: CodexAiProviderConfig,
-): T {
-  return {
-    ...settings,
-    providers: { ...settings.providers, codex },
-  } as T
-}
-
 function normalizedSettings<T extends CustomAiProviderSettings>(settings: T): T {
   const custom = settings.providers.custom
   const normalized = withCustomSettings(settings, {
@@ -71,11 +49,8 @@ function normalizedSettings<T extends CustomAiProviderSettings>(settings: T): T 
     baseUrl: (custom.baseUrl ?? '').trim().replace(/\/+$/, ''),
   })
   return {
-    ...withCodexSettings(normalized, {
-      ...normalized.providers.codex,
-      model: normalized.providers.codex.model.trim(),
-    }),
-    provider: settings.provider === 'codex' ? 'codex' : 'custom',
+    ...normalized,
+    provider: settings.provider,
     image: {
       apiKey: normalized.image.apiKey.trim(),
       model: normalized.image.model.trim(),
@@ -109,26 +84,20 @@ export function AiProviderSettingsForm<T extends CustomAiProviderSettings>({
   submitting = false,
   idPrefix = 'custom-ai-provider',
   variant = 'page',
-  oauthBridge,
+  section = 'all',
 }: AiProviderSettingsFormProps<T>) {
   const custom = settings.providers.custom
-  const codex = settings.providers.codex
-  const providerKind = settings.provider === 'codex' ? 'codex' : 'custom'
-  const providerId = `${idPrefix}-provider`
   const baseUrlId = `${idPrefix}-base-url`
   const modelId = `${idPrefix}-model`
   const apiKeyId = `${idPrefix}-api-key`
-  const codexModelId = `${idPrefix}-codex-model`
   const imageBaseUrlId = `${idPrefix}-image-base-url`
   const imageModelId = `${idPrefix}-image-model`
   const imageApiKeyId = `${idPrefix}-image-api-key`
+  const showCustom = section === 'all' || section === 'custom'
+  const showImage = section === 'all' || section === 'image'
 
   const updateCustom = (patch: Partial<CustomAiProviderConfig>): void => {
     onChange(withCustomSettings(settings, { ...custom, ...patch }))
-  }
-
-  const updateCodex = (patch: Partial<CodexAiProviderConfig>): void => {
-    onChange(withCodexSettings(settings, { ...codex, ...patch }))
   }
 
   const updateImage = (patch: Partial<ImageProviderConfig>): void => {
@@ -158,24 +127,7 @@ export function AiProviderSettingsForm<T extends CustomAiProviderSettings>({
       }}
     >
       <div className="ai-provider-fields">
-        <div className="ai-provider-field">
-          <label htmlFor={providerId}>{aiProviderSettingsText(lang, 'provider')}</label>
-          <select
-            id={providerId}
-            value={providerKind}
-            onChange={(event) =>
-              onChange({
-                ...settings,
-                provider: event.target.value === 'codex' ? 'codex' : 'custom',
-              })
-            }
-          >
-            <option value="custom">{aiProviderSettingsText(lang, 'customProvider')}</option>
-            <option value="codex">{aiProviderSettingsText(lang, 'codexProvider')}</option>
-          </select>
-        </div>
-
-        {providerKind === 'custom' ? (
+        {showCustom && (
           <>
             <div className="ai-provider-field">
               <label htmlFor={baseUrlId}>{aiProviderSettingsText(lang, 'baseUrl')}</label>
@@ -237,79 +189,64 @@ export function AiProviderSettingsForm<T extends CustomAiProviderSettings>({
               <span>{aiProviderSettingsText(lang, 'security')}</span>
             </p>
           </>
-        ) : (
-          <>
-            <div className="ai-provider-field">
-              <label htmlFor={codexModelId}>{aiProviderSettingsText(lang, 'model')}</label>
-              <input
-                id={codexModelId}
-                required
-                value={codex.model}
-                onChange={(event) => updateCodex({ model: event.target.value })}
-                list={`${idPrefix}-codex-models`}
-              />
-              <datalist id={`${idPrefix}-codex-models`}>
-                {['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2-codex'].map(
-                  (model) => (
-                    <option key={model} value={model} />
-                  ),
-                )}
-              </datalist>
-            </div>
-            <CodexOAuthControl lang={lang} {...(oauthBridge ? { bridge: oauthBridge } : {})} />
-          </>
         )}
 
-        <div className="ai-provider-section-title">
-          {aiProviderSettingsText(lang, 'imageSection')}
-        </div>
-        <div className="ai-provider-field">
-          <label htmlFor={imageBaseUrlId}>{aiProviderSettingsText(lang, 'imageBaseUrl')}</label>
-          <input
-            id={imageBaseUrlId}
-            required
-            type="url"
-            value={settings.image.baseUrl}
-            onChange={(event) => updateImage({ baseUrl: event.target.value })}
-            placeholder="https://api.openai.com/v1"
-          />
-        </div>
-        <div className="ai-provider-field">
-          <label htmlFor={imageModelId}>{aiProviderSettingsText(lang, 'imageModel')}</label>
-          <input
-            id={imageModelId}
-            required
-            value={settings.image.model}
-            onChange={(event) => updateImage({ model: event.target.value })}
-            placeholder="gpt-image-1"
-          />
-          <span className="ai-provider-field-hint">
-            {aiProviderSettingsText(lang, 'imageModelHint')}
-          </span>
-        </div>
-        <div className="ai-provider-field">
-          <label htmlFor={imageApiKeyId}>{aiProviderSettingsText(lang, 'imageApiKey')}</label>
-          <div className="ai-provider-secret-field">
-            <input
-              id={imageApiKeyId}
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={settings.image.apiKey}
-              onChange={(event) => updateImage({ apiKey: event.target.value })}
-            />
-            <button
-              type="button"
-              className="ai-provider-secret-toggle"
-              aria-label={aiProviderSettingsText(lang, 'imageApiKey')}
-              aria-pressed="false"
-              onClick={(event) => toggleKeyVisibility(event, imageApiKeyId)}
-            >
-              <Eye className="ai-provider-eye-show" size={20} />
-              <EyeSlash className="ai-provider-eye-hide" size={20} />
-            </button>
-          </div>
-        </div>
+        {showImage && (
+          <>
+            {section === 'all' && (
+              <div className="ai-provider-section-title">
+                {aiProviderSettingsText(lang, 'imageSection')}
+              </div>
+            )}
+            <div className="ai-provider-field">
+              <label htmlFor={imageBaseUrlId}>{aiProviderSettingsText(lang, 'imageBaseUrl')}</label>
+              <input
+                id={imageBaseUrlId}
+                required
+                type="url"
+                value={settings.image.baseUrl}
+                onChange={(event) => updateImage({ baseUrl: event.target.value })}
+                placeholder="https://api.openai.com/v1"
+              />
+            </div>
+            <div className="ai-provider-field">
+              <label htmlFor={imageModelId}>{aiProviderSettingsText(lang, 'imageModel')}</label>
+              <input
+                id={imageModelId}
+                required
+                value={settings.image.model}
+                onChange={(event) => updateImage({ model: event.target.value })}
+                placeholder="gpt-image-1"
+              />
+              <span className="ai-provider-field-hint">
+                {aiProviderSettingsText(lang, 'imageModelHint')}
+              </span>
+            </div>
+            <div className="ai-provider-field">
+              <label htmlFor={imageApiKeyId}>{aiProviderSettingsText(lang, 'imageApiKey')}</label>
+              <div className="ai-provider-secret-field">
+                <input
+                  id={imageApiKeyId}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={settings.image.apiKey}
+                  onChange={(event) => updateImage({ apiKey: event.target.value })}
+                />
+                <button
+                  type="button"
+                  className="ai-provider-secret-toggle"
+                  aria-label={aiProviderSettingsText(lang, 'imageApiKey')}
+                  aria-pressed="false"
+                  onClick={(event) => toggleKeyVisibility(event, imageApiKeyId)}
+                >
+                  <Eye className="ai-provider-eye-show" size={20} />
+                  <EyeSlash className="ai-provider-eye-hide" size={20} />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="ai-provider-actions">
@@ -339,73 +276,6 @@ export function AiProviderSettingsForm<T extends CustomAiProviderSettings>({
   )
 }
 
-function CodexOAuthControl({ lang, bridge }: { lang: Lang; bridge?: CodexOAuthBridge }) {
-  const resolvedBridge = bridge ?? globalOAuthBridge()
-  const [status, setStatus] = useState<'loading' | 'in' | 'out'>('loading')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let active = true
-    if (!resolvedBridge) {
-      setStatus('out')
-      return () => {
-        active = false
-      }
-    }
-    void resolvedBridge
-      .codexAuthStatus()
-      .then((next) => active && setStatus(next.loggedIn ? 'in' : 'out'))
-      .catch((cause: unknown) => {
-        if (!active) return
-        setStatus('out')
-        setError(cause instanceof Error ? cause.message : String(cause))
-      })
-    return () => {
-      active = false
-    }
-  }, [resolvedBridge])
-
-  const changeAuth = async (login: boolean): Promise<void> => {
-    if (!resolvedBridge) return
-    setBusy(true)
-    setError('')
-    try {
-      const next = login ? await resolvedBridge.codexLogin() : await resolvedBridge.codexLogout()
-      setStatus(next.loggedIn ? 'in' : 'out')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="ai-provider-oauth">
-      <div>
-        <strong>{aiProviderSettingsText(lang, 'codexOAuth')}</strong>
-        <span>
-          {status === 'loading'
-            ? aiProviderSettingsText(lang, 'codexChecking')
-            : status === 'in'
-              ? aiProviderSettingsText(lang, 'codexConnected')
-              : aiProviderSettingsText(lang, 'codexDisconnected')}
-        </span>
-      </div>
-      <button
-        type="button"
-        disabled={busy || !resolvedBridge}
-        onClick={() => void changeAuth(status !== 'in')}
-      >
-        {status === 'in'
-          ? aiProviderSettingsText(lang, 'codexLogout')
-          : aiProviderSettingsText(lang, 'codexLogin')}
-      </button>
-      {error && <p role="alert">{error}</p>}
-    </div>
-  )
-}
-
 /**
  * Polished modal editor used from each document AI panel. The dedicated shell
  * settings page uses AiProviderSettingsForm directly.
@@ -416,14 +286,12 @@ export function AiProviderSettings<T extends CustomAiProviderSettings>({
   settings,
   onSave,
   onClose,
-  oauthBridge,
 }: {
   open: boolean
   lang: Lang
   settings: T
   onSave: (settings: T) => void
   onClose: () => void
-  oauthBridge?: CodexOAuthBridge
 }) {
   const [draft, setDraft] = useState(settings)
 
@@ -478,11 +346,10 @@ export function AiProviderSettings<T extends CustomAiProviderSettings>({
           variant="dialog"
           lang={lang}
           settings={draft}
-          {...(oauthBridge ? { oauthBridge } : {})}
           onChange={setDraft}
           onCancel={onClose}
           onSubmit={(next) => {
-            onSave(next)
+            onSave({ ...next, provider: 'custom' } as T)
             onClose()
           }}
         />

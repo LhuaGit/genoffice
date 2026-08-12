@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { GearSix } from '@phosphor-icons/react'
+import { aiProviderSettingsText } from '@genoffice/ui'
 import logoLockup from './assets/genoffice-logo.svg'
 import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
@@ -441,8 +442,10 @@ type ThemeValue = (typeof THEME_OPTIONS)[number]['value']
 
 function AccountEntry({
   onStatusChange,
+  onOpenSettings,
 }: {
   onStatusChange?: (status: AccountStatus | null) => void
+  onOpenSettings?: () => void
 }) {
   const { lang, setLang, t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
@@ -758,6 +761,33 @@ function AccountEntry({
             </>
           )}
           <div className="account-menu-divider" />
+          <button
+            className="account-menu-item settings-menu-row"
+            role="menuitem"
+            onClick={() => {
+              closeMenu()
+              onOpenSettings?.()
+            }}
+          >
+            <GearSix size={16} weight="regular" aria-hidden="true" />
+            <span className="lang-row-label">{t('navSettings')}</span>
+            <span className="lang-row-current">{aiProviderSettingsText(lang, 'serviceTitle')}</span>
+            <svg
+              className="lang-row-chevron"
+              width="11"
+              height="11"
+              viewBox="0 0 12 12"
+              aria-hidden="true"
+            >
+              <path
+                d="M4.5 2.5l4 3.5-4 3.5"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
+          </button>
           <div
             className="lang-row-wrap"
             ref={langRowRef}
@@ -2470,27 +2500,15 @@ export function Home() {
           </>
         )}
 
-        <div className="settings-nav">
-          <button
-            className={`nav-item settings-nav-item${section === 'settings' ? ' active' : ''}`}
-            aria-current={section === 'settings' ? 'page' : undefined}
-            onClick={() => {
-              setSection('settings')
-              setSelectedProjectId(null)
-              setSelected(new Set())
-              setRowMenu(null)
-            }}
-          >
-            <GearSix
-              size={17}
-              weight={section === 'settings' ? 'fill' : 'regular'}
-              aria-hidden="true"
-            />
-            <span className="nav-label">{t('navSettings')}</span>
-          </button>
-        </div>
-
-        <AccountEntry onStatusChange={handleAccountStatus} />
+        <AccountEntry
+          onStatusChange={handleAccountStatus}
+          onOpenSettings={() => {
+            setSection('settings')
+            setSelectedProjectId(null)
+            setSelected(new Set())
+            setRowMenu(null)
+          }}
+        />
       </aside>
 
       {section === 'settings' ? (

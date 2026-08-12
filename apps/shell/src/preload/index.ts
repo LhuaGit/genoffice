@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AiSettings } from '@genoffice/ai-provider'
+import type { AiModelListResult, AiSettings } from '@genoffice/ai-provider'
 import { createPiAgentPreloadBridge } from '@genoffice/pi-agent-runtime/preload'
 import type {
   AccountLoginEvent,
@@ -65,6 +65,10 @@ const homeApi: HomeApi = {
     const listener = (_event: IpcRendererEvent, settings: AiSettings): void => handler(settings)
     ipcRenderer.on(HOME_CHANNELS.aiSettingsChanged, listener)
     return () => ipcRenderer.removeListener(HOME_CHANNELS.aiSettingsChanged, listener)
+  },
+  async listAiModels(request) {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.listAiModels, request)
+    return (result ?? { models: [], error: '无法获取模型。' }) as AiModelListResult
   },
   async recents(query) {
     return asRecentPage(await ipcRenderer.invoke(HOME_CHANNELS.recents, query))

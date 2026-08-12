@@ -35,6 +35,11 @@ import menuHomeIcon1x from './assets/menu-home.png?asset'
 import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
+  listProviderModels,
+  type AiModelListRequest,
+  type AiModelListResult,
+} from '@genoffice/ai-provider'
+import {
   appMenuLabels,
   contextMenuLabels,
   editMenuTemplate,
@@ -54,6 +59,7 @@ import {
 import { ProjectStore } from '@genoffice/project-store'
 import {
   ensureGenofficeLogin,
+  genofficeApiKey,
   genofficeLogout,
   gskConvertPdfToDocx,
   gskLoginInfo,
@@ -1708,6 +1714,25 @@ function statEntries(paths: string[]): RecentEntry[] {
 }
 
 function registerHomeIpc(): void {
+  ipcMain.handle(
+    HOME_CHANNELS.listAiModels,
+    async (_event, request: AiModelListRequest): Promise<AiModelListResult> => {
+      if (!request || typeof request !== 'object' || !request.config) {
+        return { models: [], error: '模型查询参数无效。' }
+      }
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 12_000)
+      try {
+        return await listProviderModels(request, {
+          apiKeyOverride: request.providerId === 'genspark' ? genofficeApiKey() : undefined,
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
+    },
+  )
+
   // signed-in means GenOffice's own device-code login; the shared gsk CLI key
   // is only a silent fallback, deliberately not shown here to nudge users onto our key
   ipcMain.handle(HOME_CHANNELS.accountStatus, async () => {

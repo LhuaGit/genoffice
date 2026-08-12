@@ -246,21 +246,6 @@ body.vib .home {
   font-variant-numeric: tabular-nums;
 }
 
-.settings-nav {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid #efefef;
-}
-
-.settings-nav-item.active {
-  background: linear-gradient(90deg, rgb(35 103 236 / 12%), rgb(35 103 236 / 6%));
-  color: var(--accent);
-}
-
-.settings-nav-item.active svg {
-  color: var(--accent);
-}
-
 /* ---- bottom-left account entry (today = Genspark login, later = signup/account system) ---- */
 /* language switching lives in the account popup menu (.lang-row / .lang-flyout) */
 
@@ -295,7 +280,7 @@ body.vib .home {
 
 .account-entry {
   position: relative;
-  margin-top: 8px;
+  margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border-subtle);
 }
@@ -473,6 +458,15 @@ body.vib .home {
 
 .account-menu-item:hover {
   background: var(--bg-hover);
+}
+
+.settings-menu-row {
+  color: var(--text-primary);
+}
+
+.settings-menu-row > svg:first-child {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .account-menu-item.danger {
